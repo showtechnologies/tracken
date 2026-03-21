@@ -76,27 +76,38 @@ async function loadFromGitHub(show=true){
     render();
     return false;
   }
+
   try{
     const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}?ref=${GITHUB_BRANCH}`;
+    console.log("LOAD URL:", url);
+
     const res = await fetch(url,{
       headers:{
         Authorization:`Bearer ${GITHUB_TOKEN}`,
         Accept:'application/vnd.github+json'
       }
     });
+
+    const raw = await res.text();
+    console.log("LOAD STATUS:", res.status);
+    console.log("LOAD BODY:", raw);
+
     if(!res.ok){
-      const txt = await res.text();
-      throw new Error(txt || 'Errore caricamento GitHub');
+      if(show) showAlert('error', `Errore GitHub ${res.status}. Apri la console.`);
+      render();
+      return false;
     }
-    const data = await res.json();
+
+    const data = JSON.parse(raw);
     currentSHA = data.sha;
-    db = JSON.parse(base64ToUtf8(data.content.replace(/\n/g,'')));
+    db = JSON.parse(base64ToUtf8(data.content.replace(/\\n/g,'')));
+
     if(show) showAlert('ok','database.json caricato da GitHub.');
     render();
     return true;
   }catch(err){
-    if(show) showAlert('error','Errore caricamento GitHub.');
-    console.error(err);
+    console.error("LOAD EXCEPTION:", err);
+    if(show) showAlert('error','Errore caricamento GitHub. Apri la console.');
     render();
     return false;
   }
