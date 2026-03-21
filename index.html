@@ -33,7 +33,12 @@
 <div class="modal" id="modal"><div class="modal-card" id="modalCard"></div></div>
 <script>
 const ADMIN_USER="admin", ADMIN_PASSWORD="admin123", SESSION_TIMEOUT_MINUTES=20;
-let db=null, currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null, fileHandle=null;
+const GITHUB_TOKEN="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";
+const GITHUB_OWNER="showtechnologies";
+const GITHUB_REPO="traken";
+const GITHUB_FILE="database.json";
+const GITHUB_BRANCH="main";
+let db=null, currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null, currentSHA=null;
 const $=s=>document.querySelector(s);
 
 function uid(p='id'){ return `${p}_${Math.random().toString(36).slice(2,10)}_${Date.now().toString(36)}` }
@@ -57,49 +62,112 @@ function confirmDelete(label){ return confirm(`ATTENZIONE: stai per disattivare 
 
 function defaultDatabase(){ return {"config":{"sessionTimeoutMinutes":20,"storageMode":"json-file"},"users":[{"id":"u1","name":"Mario Rossi","pinHash":"cGluOjEyMzQ6djE=","role":"user","active":true,"createdAt":"2024-01-01T10:00:00Z"},{"id":"u2","name":"Luca Bianchi","pinHash":"cGluOjIzNDU6djE=","role":"user","active":true,"createdAt":"2024-01-01T10:00:00Z"}],"locations":[{"id":"l1","name":"Magazzino centrale Recco","type":"magazzino","active":true,"notes":"","createdAt":"2024-01-01T10:00:00Z"},{"id":"l2","name":"Cantiere Rapallo","type":"cantiere","active":true,"notes":"","createdAt":"2024-01-01T10:00:00Z"}],"articles":[{"id":"a1","name":"Trapano Bosch 18V","category":"Trapani","internalCode":"TRP-001","serial":"SN7781","active":true,"locationId":"l2","state":"home","currentHolderUserId":null,"lastKnownUserId":null,"lastMovementAt":null,"lastNote":"","createdAt":"2024-01-01T10:00:00Z"},{"id":"a2","name":"Smerigliatrice Makita 125","category":"Taglio","internalCode":"SMR-002","serial":"","active":true,"locationId":"l1","state":"home","currentHolderUserId":null,"lastKnownUserId":null,"lastMovementAt":null,"lastNote":"","createdAt":"2024-01-01T10:00:00Z"}],"movements":[],"devices":[]} }
 
-async function chooseJsonFile(openExisting){
-  if(!window.showOpenFilePicker || !window.showSaveFilePicker){
-    showAlert('error','Usa Chrome o Edge desktop: questo browser non supporta il salvataggio diretto su file.');
-    render(); return;
+function isGitHubConfigured(){
+  return !["INSERISCI_TOKEN","INSERISCI_OWNER","INSERISCI_REPO"].includes(GITHUB_TOKEN) &&
+         !["INSERISCI_TOKEN","INSERISCI_OWNER","INSERISCI_REPO"].includes(GITHUB_OWNER) &&
+         !["INSERISCI_TOKEN","INSERISCI_OWNER","INSERISCI_REPO"].includes(GITHUB_REPO);
+}
+function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
+function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str))); }
+
+async function loadFromGitHub(show=true){
+  if(!isGitHubConfigured()){
+    if(show) showAlert('error','Inserisci token, owner e repo nelle costanti in alto.');
+    render();
+    return false;
   }
   try{
-    if(openExisting){
-      const [handle] = await window.showOpenFilePicker({types:[{description:'JSON',accept:{'application/json':['.json']}}],multiple:false});
-      fileHandle = handle;
-      const file = await fileHandle.getFile();
-      db = JSON.parse(await file.text());
-      showAlert('ok','database.json aperto.');
-    }else{
-      fileHandle = await window.showSaveFilePicker({suggestedName:'database.json',types:[{description:'JSON',accept:{'application/json':['.json']}}]});
-      db = defaultDatabase();
-      await saveJsonFile(false);
-      showAlert('ok','database.json creato.');
+    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}?ref=${GITHUB_BRANCH}`;
+    const res = await fetch(url,{
+      headers:{
+        Authorization:`Bearer ${GITHUB_TOKEN}`,
+        Accept:'application/vnd.github+json'
+      }
+    });
+    if(!res.ok){
+      const txt = await res.text();
+      throw new Error(txt || 'Errore caricamento GitHub');
     }
+    const data = await res.json();
+    currentSHA = data.sha;
+    db = JSON.parse(base64ToUtf8(data.content.replace(/
+/g,'')));
+    if(show) showAlert('ok','database.json caricato da GitHub.');
     render();
-  }catch(e){}
+    return true;
+  }catch(err){
+    if(show) showAlert('error','Errore caricamento GitHub.');
+    console.error(err);
+    render();
+    return false;
+  }
 }
+
 async function saveJsonFile(show=true){
-  if(!fileHandle){
-    showAlert('error','Apri o crea prima database.json.');
+  if(!db){ showAlert('error','Database non caricato.'); render(); return false; }
+  if(!isGitHubConfigured()){
+    showAlert('error','Inserisci token, owner e repo nelle costanti in alto.');
     render();
     return false;
   }
   try{
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(db,null,2));
-    await writable.close();
-    if(show) showAlert('ok','database.json aggiornato.');
+    if(!currentSHA){
+      const ok = await loadFromGitHub(false);
+      if(!ok) return false;
+    }
+    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}`;
+    let res = await fetch(url,{
+      method:'PUT',
+      headers:{
+        Authorization:`Bearer ${GITHUB_TOKEN}`,
+        Accept:'application/vnd.github+json'
+      },
+      body: JSON.stringify({
+        message:'update database',
+        content:utf8ToBase64(JSON.stringify(db,null,2)),
+        sha: currentSHA,
+        branch: GITHUB_BRANCH
+      })
+    });
+
+    if(res.status === 409 || res.status === 422){
+      const reloadOk = await loadFromGitHub(false);
+      if(!reloadOk) throw new Error('Conflitto SHA');
+      res = await fetch(url,{
+        method:'PUT',
+        headers:{
+          Authorization:`Bearer ${GITHUB_TOKEN}`,
+          Accept:'application/vnd.github+json'
+        },
+        body: JSON.stringify({
+          message:'update database',
+          content:utf8ToBase64(JSON.stringify(db,null,2)),
+          sha: currentSHA,
+          branch: GITHUB_BRANCH
+        })
+      });
+    }
+
+    if(!res.ok){
+      const txt = await res.text();
+      throw new Error(txt || 'Errore salvataggio GitHub');
+    }
+    const data = await res.json();
+    currentSHA = data.content.sha;
+    if(show) showAlert('ok','database.json aggiornato su GitHub.');
     return true;
-  }catch(e){
-    showAlert('error','Impossibile salvare database.json.');
+  }catch(err){
+    if(show) showAlert('error','Impossibile salvare su GitHub.');
+    console.error(err);
     render();
     return false;
   }
 }
+
 async function importFromFile(file){
   const text = await file.text();
   db = JSON.parse(text);
-  showAlert('ok','Database importato in memoria. Ora usa Salva su file.');
+  showAlert('ok','Database importato in memoria. Premi "Salva su GitHub".');
   render();
 }
 function exportDatabase(){
@@ -132,7 +200,7 @@ function render(){
   ensureSession();
   const app=$('#app');
   if(!db){
-    app.innerHTML=`<div class="panel">${renderAlert()}${renderTopbar('Gestione attrezzature - JSON locale','Questa versione aggiorna direttamente un file database.json sul disco')}<div class="actions"><button class="primary" onclick="chooseJsonFile(false)">Crea database.json</button><button class="soft" onclick="chooseJsonFile(true)">Apri database.json</button></div><p class="small muted" style="margin-top:12px">Richiede Chrome o Edge desktop. Su browser non compatibili puoi usare l'esportazione manuale.</p></div>`;
+    app.innerHTML=`<div class="panel">${renderAlert()}${renderTopbar('Gestione attrezzature - GitHub','Questa versione legge e aggiorna database.json direttamente nel repository')}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button><button class="soft" onclick="db=defaultDatabase(); currentSHA=null; render();">Usa database di default</button></div><p class="small muted" style="margin-top:12px">Inserisci token, owner e repo nelle costanti in alto, poi usa il pulsante di caricamento.</p></div>`;
     return;
   }
   if(adminLogged){
@@ -145,7 +213,7 @@ function render(){
   app.innerHTML=`${renderAlert()}${renderUserArticles()}`
 }
 
-function renderHome(){ return `<div class="panel">${renderTopbar('Gestione attrezzature - JSON locale','Ora il salvataggio aggiorna direttamente il file database.json',`<span class="badge">${fileHandle?'file collegato':'nessun file collegato'}</span>`)}<div class="panel" style="margin-bottom:12px"><h3>File database</h3><div class="actions"><button class="soft" onclick="chooseJsonFile(true)">Apri database.json</button><button class="primary" onclick="chooseJsonFile(false)">Crea database.json</button><button class="ok" onclick="saveJsonFile()">Salva su file</button><button onclick="document.getElementById('importJson').click()">Importa JSON</button><button onclick="exportDatabase()">Esporta copia</button></div><input id="importJson" type="file" accept=".json,application/json" style="display:none" onchange="handleImport(event)"><p class="small muted" style="margin-top:10px">Il file resta sul tuo PC. Ogni modifica nell'app lo aggiorna direttamente.</p></div><div class="grid g2"><div class="panel" style="margin:0"><h3>Login admin</h3><div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" value="admin123"></label></div><div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div></div><div class="panel" style="margin:0"><h3>Operatori</h3><div class="tilegrid">${activeUsers().map(u=>`<button class="tile" onclick="openPinModal('${u.id}')"><strong>${esc(u.name)}</strong><div class="muted small">Tocca e inserisci il PIN</div></button>`).join('')}</div></div></div></div>` }
+function renderHome(){ return `<div class="panel">${renderTopbar('Gestione attrezzature - GitHub','Ora il salvataggio aggiorna direttamente database.json nel repository',`<span class="badge">${currentSHA?'database caricato':'database non caricato'}</span>`)}<div class="panel" style="margin-bottom:12px"><h3>Database remoto</h3><div class="actions"><button class="soft" onclick="loadFromGitHub()">Carica database da GitHub</button><button class="ok" onclick="saveJsonFile()">Salva su GitHub</button><button onclick="document.getElementById('importJson').click()">Importa JSON</button><button onclick="exportDatabase()">Esporta copia</button></div><input id="importJson" type="file" accept=".json,application/json" style="display:none" onchange="handleImport(event)"><p class="small muted" style="margin-top:10px">Questa versione usa il repository GitHub come database condiviso. Il file locale non è più necessario.</p></div><div class="grid g2"><div class="panel" style="margin:0"><h3>Login admin</h3><div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" value="admin123"></label></div><div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div></div><div class="panel" style="margin:0"><h3>Operatori</h3><div class="tilegrid">${activeUsers().map(u=>`<button class="tile" onclick="openPinModal('${u.id}')"><strong>${esc(u.name)}</strong><div class="muted small">Tocca e inserisci il PIN</div></button>`).join('')}</div></div></div></div>` }
 function handleImport(event){ const file=event.target.files[0]; if(file) importFromFile(file); event.target.value='' }
 function adminLogin(){ const u=$('#adminUser').value.trim(), p=$('#adminPass').value; if(u!==ADMIN_USER||p!==ADMIN_PASSWORD){ showAlert('error','Credenziali admin non valide.'); render(); return; } adminLogged=true; currentView='admin_dashboard'; currentSessionId=uid('sess'); touchSession(); render() }
 function openPinModal(userId){ const user=db.users.find(u=>u.id===userId); openModal(`<h3>Accesso utente</h3><p>Hai selezionato <strong>${esc(user.name)}</strong>. Inserisci il PIN.</p><label>PIN<input id="pinInput" type="password" maxlength="8"></label><div class="pinpad">${[1,2,3,4,5,6,7,8,9,'C',0,'←'].map(k=>`<button onclick="pinKey('${k}')">${k}</button>`).join('')}</div><div class="modal-actions"><button onclick="closeModal()">Annulla</button><button class="primary" onclick="userLogin('${userId}')">Entra</button></div>`) }
@@ -198,11 +266,11 @@ function openHistory(articleId){
   openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?'• '+esc(article.serial):''}</p>${logs.length?`<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>${logs.map(log=>`<tr><td data-label="Data">${formatDate(log.timestamp)}</td><td data-label="Tipo">${esc(log.movementType)}</td><td data-label="Da sede">${esc(getLocationName(log.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(log.toLocationId))}</td><td data-label="Da">${esc(log.fromUserId?getUserName(log.fromUserId):'Home')}</td><td data-label="A">${esc(log.toUserId?getUserName(log.toUserId):'Home')}</td><td data-label="Registrato da">${esc(getUserName(log.recordedByUserId))}</td><td data-label="Nota">${esc(log.note||'-')}</td></tr>`).join('')}</tbody></table>`:`<div class="panel">Nessun movimento registrato.</div>`}<div class="modal-actions"><button class="primary" onclick="closeModal()">Chiudi</button></div>`)
 }
 
-function renderAdminSidebar(){ return `<div class="sidebar"><h3>Area admin</h3><div class="nav"><button class="${currentView==='admin_dashboard'?'active':''}" onclick="setAdminView('admin_dashboard')">Dashboard</button><button class="${currentView==='admin_users'?'active':''}" onclick="setAdminView('admin_users')">Utenti</button><button class="${currentView==='admin_locations'?'active':''}" onclick="setAdminView('admin_locations')">Cantieri / sedi</button><button class="${currentView==='admin_articles'?'active':''}" onclick="setAdminView('admin_articles')">Attrezzature</button><button class="${currentView==='admin_logs'?'active':''}" onclick="setAdminView('admin_logs')">Storico globale</button></div><div class="actions" style="margin-top:14px"><button onclick="logoutAll()">Esci</button><button class="ok" onclick="saveJsonFile()">Salva file</button></div></div>` }
+function renderAdminSidebar(){ return `<div class="sidebar"><h3>Area admin</h3><div class="nav"><button class="${currentView==='admin_dashboard'?'active':''}" onclick="setAdminView('admin_dashboard')">Dashboard</button><button class="${currentView==='admin_users'?'active':''}" onclick="setAdminView('admin_users')">Utenti</button><button class="${currentView==='admin_locations'?'active':''}" onclick="setAdminView('admin_locations')">Cantieri / sedi</button><button class="${currentView==='admin_articles'?'active':''}" onclick="setAdminView('admin_articles')">Attrezzature</button><button class="${currentView==='admin_logs'?'active':''}" onclick="setAdminView('admin_logs')">Storico globale</button></div><div class="actions" style="margin-top:14px"><button onclick="logoutAll()">Esci</button><button class="ok" onclick="saveJsonFile()">Salva GitHub</button></div></div>` }
 function setAdminView(view){ currentView=view; touchSession(); render() }
 function renderAdminDashboard(){
   const total=db.articles.filter(a=>a.active).length, home=db.articles.filter(a=>a.active&&a.state==='home').length, inUse=db.articles.filter(a=>a.active&&a.state==='in_carico').length, locs=db.locations.filter(l=>l.active).length;
-  return `<div class="panel">${renderTopbar('Dashboard amministrativa','Versione locale con scrittura diretta su database.json',`<span class="badge">File: ${fileHandle?'collegato':'non collegato'}</span>`)}<div class="stats"><div class="stat"><div class="muted">Attrezzature attive</div><div class="value">${total}</div></div><div class="stat"><div class="muted">Disponibili in home</div><div class="value">${home}</div></div><div class="stat"><div class="muted">In carico</div><div class="value">${inUse}</div></div><div class="stat"><div class="muted">Sedi attive</div><div class="value">${locs}</div></div></div></div><div class="panel"><h3>File collegato</h3><p class="small muted">Ogni modifica salva direttamente sul file scelto. Per GitHub manterrai la stessa struttura di <span class="code">database.json</span> e sostituirai solo la funzione di lettura/scrittura.</p><div class="actions"><button class="ok" onclick="saveJsonFile()">Salva adesso</button><button onclick="exportDatabase()">Esporta copia</button></div></div>`
+  return `<div class="panel">${renderTopbar('Dashboard amministrativa','Versione GitHub con scrittura diretta su database.json',`<span class="badge">GitHub: ${currentSHA?'connesso':'non caricato'}</span>`)}<div class="stats"><div class="stat"><div class="muted">Attrezzature attive</div><div class="value">${total}</div></div><div class="stat"><div class="muted">Disponibili in home</div><div class="value">${home}</div></div><div class="stat"><div class="muted">In carico</div><div class="value">${inUse}</div></div><div class="stat"><div class="muted">Sedi attive</div><div class="value">${locs}</div></div></div></div><div class="panel"><h3>File collegato</h3><p class="small muted">Ogni modifica salva direttamente nel repository GitHub. La struttura di <span class="code">database.json</span> resta invariata.</p><div class="actions"><button class="ok" onclick="saveJsonFile()">Salva su GitHub</button><button onclick="exportDatabase()">Esporta copia</button></div></div>`
 }
 function renderAdminUsers(){ return `<div class="panel">${renderTopbar('Utenti','Solo l\'admin può creare e disattivare utenti')}<div class="grid g4"><label>Nome<input id="newUserName" placeholder="Es. Marco Neri"></label><label>PIN<input id="newUserPin" placeholder="4 cifre"></label><label>Ruolo<select id="newUserRole"><option value="user">User</option><option value="admin">Admin</option></select></label><label>&nbsp;<button class="primary" onclick="createUser()">Crea utente</button></label></div></div><div class="panel"><table><thead><tr><th>Nome</th><th>Ruolo</th><th>Stato</th><th>Creato il</th><th>Azioni</th></tr></thead><tbody>${db.users.map(u=>`<tr><td data-label="Nome">${esc(u.name)}</td><td data-label="Ruolo">${esc(u.role)}</td><td data-label="Stato"><span class="pill ${u.active?'activep':'inactivep'}">${u.active?'Attivo':'Disattivo'}</span></td><td data-label="Creato">${formatDate(u.createdAt)}</td><td data-label="Azioni" class="actions"><button onclick="resetPin('${u.id}')">Reset PIN</button>${u.active?`<button class="danger" onclick="deactivateUser('${u.id}')">Disattiva</button>`:`<button class="ok" onclick="reactivateUser('${u.id}')">Riattiva</button>`}</td></tr>`).join('')}</tbody></table></div>` }
 async function createUser(){ const name=$('#newUserName').value.trim(), pin=$('#newUserPin').value.trim(), role=$('#newUserRole').value; if(!name||!pin){ showAlert('error','Inserisci nome e PIN.'); render(); return; } db.users.push({id:uid('u'),name,pinHash:hashPin(pin),role,active:true,createdAt:nowIso()}); await saveJsonFile(); render() }
@@ -221,9 +289,9 @@ async function deactivateArticle(id){ if(!confirmDelete("l'articolo selezionato"
 
 function renderAdminLogs(){ return `<div class="panel">${renderTopbar('Storico globale','Tutti i movimenti registrati')}<table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.timestamp)}</td><td data-label="Tipo">${esc(m.movementType)}</td><td data-label="Articolo">${esc(m.articleName)}</td><td data-label="Seriale">${esc(m.articleSerial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td><td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td><td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td><td data-label="Registrato da">${esc(getUserName(m.recordedByUserId))}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('')}</tbody></table></div>` }
 
-window.chooseJsonFile=chooseJsonFile; window.saveJsonFile=saveJsonFile; window.handleImport=handleImport; window.exportDatabase=exportDatabase; window.pinKey=pinKey; window.adminLogin=adminLogin; window.openPinModal=openPinModal; window.userLogin=userLogin; window.selectLocation=selectLocation; window.toggleArticle=toggleArticle; window.openMovementModal=openMovementModal; window.confirmMovement=confirmMovement; window.openHistory=openHistory; window.closeModal=closeModal; window.setAdminView=setAdminView; window.createUser=createUser; window.resetPin=resetPin; window.deactivateUser=deactivateUser; window.reactivateUser=reactivateUser; window.createLocation=createLocation; window.closeLocation=closeLocation; window.reopenLocation=reopenLocation; window.createArticle=createArticle; window.deactivateArticle=deactivateArticle; window.logoutAll=logoutAll;
+window.loadFromGitHub=loadFromGitHub; window.saveJsonFile=saveJsonFile; window.handleImport=handleImport; window.exportDatabase=exportDatabase; window.pinKey=pinKey; window.adminLogin=adminLogin; window.openPinModal=openPinModal; window.userLogin=userLogin; window.selectLocation=selectLocation; window.toggleArticle=toggleArticle; window.openMovementModal=openMovementModal; window.confirmMovement=confirmMovement; window.openHistory=openHistory; window.closeModal=closeModal; window.setAdminView=setAdminView; window.createUser=createUser; window.resetPin=resetPin; window.deactivateUser=deactivateUser; window.reactivateUser=reactivateUser; window.createLocation=createLocation; window.closeLocation=closeLocation; window.reopenLocation=reopenLocation; window.createArticle=createArticle; window.deactivateArticle=deactivateArticle; window.logoutAll=logoutAll;
 
-render();
+if(isGitHubConfigured()){ loadFromGitHub(false); } else { render(); }
 </script>
 </body>
 </html>
