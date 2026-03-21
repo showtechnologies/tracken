@@ -90,8 +90,7 @@ async function loadFromGitHub(show=true){
     }
     const data = await res.json();
     currentSHA = data.sha;
-    db = JSON.parse(base64ToUtf8(data.content.replace(/
-/g,'')));
+    db = JSON.parse(base64ToUtf8(data.content.replace(/\n/g,'')));
     if(show) showAlert('ok','database.json caricato da GitHub.');
     render();
     return true;
