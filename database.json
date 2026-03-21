@@ -19,6 +19,14 @@
       "role": "user",
       "active": true,
       "createdAt": "2024-01-01T10:00:00Z"
+    },
+    {
+      "id": "u_yh65joh2_mn0jzfjt",
+      "name": "PINO",
+      "pinHash": "cGluOjExMTE6djE=",
+      "role": "user",
+      "active": true,
+      "createdAt": "2026-03-21T16:39:29.657Z"
     }
   ],
   "locations": [
