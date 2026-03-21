@@ -1,7 +1,7 @@
 {
   "config": {
     "sessionTimeoutMinutes": 20,
-    "storageMode": "json-file"
+    "storageMode": "github"
   },
   "users": [
     {
@@ -19,22 +19,6 @@
       "role": "user",
       "active": true,
       "createdAt": "2024-01-01T10:00:00Z"
-    },
-    {
-      "id": "u_65h8lu47_mn0h4gt6",
-      "name": "piero",
-      "pinHash": "cGluOjExMTE6djE=",
-      "role": "user",
-      "active": true,
-      "createdAt": "2026-03-21T15:19:25.722Z"
-    },
-    {
-      "id": "u_7ktt1mrn_mn0h5pei",
-      "name": "giorchio",
-      "pinHash": "cGluOjExMTE6djE=",
-      "role": "user",
-      "active": true,
-      "createdAt": "2026-03-21T15:20:23.514Z"
     }
   ],
   "locations": [
@@ -79,45 +63,14 @@
       "serial": "",
       "active": true,
       "locationId": "l1",
-      "state": "in_carico",
-      "currentHolderUserId": "u2",
-      "lastKnownUserId": "u2",
-      "lastMovementAt": "2026-03-21T15:21:19.980Z",
+      "state": "home",
+      "currentHolderUserId": null,
+      "lastKnownUserId": null,
+      "lastMovementAt": null,
       "lastNote": "",
       "createdAt": "2024-01-01T10:00:00Z"
     }
   ],
-  "movements": [
-    {
-      "id": "mov_86bsr6gf_mn0h6wz0",
-      "timestamp": "2026-03-21T15:21:19.980Z",
-      "movementType": "passaggio",
-      "articleId": "a2",
-      "articleName": "Smerigliatrice Makita 125",
-      "articleSerial": "",
-      "fromLocationId": "l1",
-      "toLocationId": "l1",
-      "fromUserId": "u_65h8lu47_mn0h4gt6",
-      "toUserId": "u2",
-      "recordedByUserId": "u_65h8lu47_mn0h4gt6",
-      "note": "",
-      "sessionId": "sess_8c6u6k1z_mn0h65sg"
-    },
-    {
-      "id": "mov_ui3m2bux_mn0h6puo",
-      "timestamp": "2026-03-21T15:21:10.752Z",
-      "movementType": "prelievo",
-      "articleId": "a2",
-      "articleName": "Smerigliatrice Makita 125",
-      "articleSerial": "",
-      "fromLocationId": "l1",
-      "toLocationId": "l1",
-      "fromUserId": null,
-      "toUserId": "u_65h8lu47_mn0h4gt6",
-      "recordedByUserId": "u_65h8lu47_mn0h4gt6",
-      "note": "",
-      "sessionId": "sess_8c6u6k1z_mn0h65sg"
-    }
-  ],
+  "movements": [],
   "devices": []
 }
