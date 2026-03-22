@@ -35,6 +35,14 @@
       "role": "user",
       "active": true,
       "createdAt": "2026-03-21T16:41:48.986Z"
+    },
+    {
+      "id": "u_a8d003o4_mn132svk",
+      "name": "polinetto",
+      "pinHash": "cGluOjExMTE6djE=",
+      "role": "user",
+      "active": true,
+      "createdAt": "2026-03-22T01:33:59.600Z"
     }
   ],
   "locations": [
