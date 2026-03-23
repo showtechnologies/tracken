@@ -33,11 +33,55 @@
 <div class="modal" id="modal"><div class="modal-card" id="modalCard"></div></div>
 <script>
 const ADMIN_USER="admin", ADMIN_PASSWORD="admin123", SESSION_TIMEOUT_MINUTES=20;
-const GITHUB_TOKEN="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";
+let GITHUB_TOKEN = localStorage.getItem("tracken_github_token") || "";
 const GITHUB_OWNER="showtechnologies";
 const GITHUB_REPO="tracken";
 const GITHUB_FILE="database.json";
 const GITHUB_BRANCH="main";
+
+function hasToken(){
+  return !!(GITHUB_TOKEN && GITHUB_TOKEN.trim());
+}
+function saveToken(){
+  const token = document.getElementById("tokenInput")?.value?.trim() || "";
+  if(!token){
+    alert("Inserisci il token GitHub.");
+    return;
+  }
+  localStorage.setItem("tracken_github_token", token);
+  GITHUB_TOKEN = token;
+  currentSHA = null;
+  loadFromGitHub();
+}
+function resetToken(){
+  if(!confirm("Vuoi rimuovere il token salvato da questo dispositivo?")) return;
+  localStorage.removeItem("tracken_github_token");
+  GITHUB_TOKEN = "";
+  currentSHA = null;
+  db = null;
+  adminLogged = false;
+  currentUserId = null;
+  currentLocationId = null;
+  if(hasToken()){ render(); } else { renderTokenSetup(); }
+}
+function renderTokenSetup(){
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <div class="panel">
+      ${renderAlert()}
+      ${renderTopbar('Tracken - Configurazione iniziale','Inserisci il token GitHub una sola volta su questo dispositivo')}
+      <div class="panel" style="margin:0">
+        <h3>Token GitHub</h3>
+        <p class="small muted">Il token verrà salvato solo nel browser di questo dispositivo e non sarà pubblicato nel file HTML.</p>
+        <label>Token GitHub
+          <input id="tokenInput" type="password" placeholder="github_pat_..." autocomplete="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <div class="actions" style="margin-top:12px">
+          <button class="primary" onclick="saveToken()">Salva token e collega GitHub</button>
+        </div>
+      </div>
+    </div>`;
+}
 let db=null, currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null, currentSHA=null;
 const $=s=>document.querySelector(s);
 
@@ -209,9 +253,10 @@ $('#modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeModal()
 function renderTopbar(title,subtitle,extra=''){ return `<div class="top"><div><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="actions">${extra}</div></div>` }
 function render(){
   ensureSession();
+  if(!hasToken()){ renderTokenSetup(); return; }
   const app=$('#app');
   if(!db){
-    app.innerHTML=`<div class="panel">${renderAlert()}${renderTopbar('Tracken - GitHub','Questa versione legge e aggiorna database.json direttamente nel repository')}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button></div><p class="small muted" style="margin-top:12px">Inserisci token, owner e repo nelle costanti in alto, poi premi il pulsante di caricamento.</p></div>`;
+    app.innerHTML=`<div class="panel">${renderAlert()}${renderTopbar('Tracken - GitHub','Questa versione legge e aggiorna database.json direttamente nel repository')}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button><button onclick="resetToken()">Cambia token</button></div><p class="small muted" style="margin-top:12px">Inserisci token, owner e repo nelle costanti in alto, poi premi il pulsante di caricamento.</p></div>`;
     return;
   }
   if(adminLogged){
@@ -224,7 +269,7 @@ function render(){
   app.innerHTML=`${renderAlert()}${renderUserArticles()}`
 }
 
-function renderHome(){ return `<div class="panel">${renderTopbar('Tracken - GitHub','Ora il salvataggio aggiorna direttamente database.json nel repository',`<span class="badge">${currentSHA?'database caricato':'database non caricato'}</span>`)}<div class="panel" style="margin-bottom:12px"><h3>Database remoto</h3><div class="actions"><button class="soft" onclick="loadFromGitHub()">Ricarica database da GitHub</button><button class="ok" onclick="saveJsonFile()">Salva su GitHub</button><button onclick="exportDatabase()">Esporta copia</button></div><p class="small muted" style="margin-top:10px">Prima di modificare dati premi almeno una volta "Carica database da GitHub". Le modifiche verranno salvate direttamente nel repository.</p></div><div class="grid g2"><div class="panel" style="margin:0"><h3>Login admin</h3><div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" value="admin123"></label></div><div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div></div><div class="panel" style="margin:0"><h3>Operatori</h3><div class="tilegrid">${activeUsers().map(u=>`<button class="tile" onclick="openPinModal('${u.id}')"><strong>${esc(u.name)}</strong><div class="muted small">Tocca e inserisci il PIN</div></button>`).join('')}</div></div></div></div>` }
+function renderHome(){ return `<div class="panel">${renderTopbar('Tracken - GitHub','Ora il salvataggio aggiorna direttamente database.json nel repository',`<span class="badge">${currentSHA?'database caricato':'database non caricato'}</span>`)}<div class="panel" style="margin-bottom:12px"><h3>Database remoto</h3><div class="actions"><button class="soft" onclick="loadFromGitHub()">Ricarica database da GitHub</button><button class="ok" onclick="saveJsonFile()">Salva su GitHub</button><button onclick="exportDatabase()">Esporta copia</button><button onclick="resetToken()">Cambia token</button></div><p class="small muted" style="margin-top:10px">Prima di modificare dati premi almeno una volta "Carica database da GitHub". Le modifiche verranno salvate direttamente nel repository.</p></div><div class="grid g2"><div class="panel" style="margin:0"><h3>Login admin</h3><div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" value="admin123"></label></div><div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div></div><div class="panel" style="margin:0"><h3>Operatori</h3><div class="tilegrid">${activeUsers().map(u=>`<button class="tile" onclick="openPinModal('${u.id}')"><strong>${esc(u.name)}</strong><div class="muted small">Tocca e inserisci il PIN</div></button>`).join('')}</div></div></div></div>` }
 function handleImport(event){
   showAlert('error','Importa JSON non disponibile in modalità GitHub.');
   render();
@@ -280,7 +325,7 @@ function openHistory(articleId){
   openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?'• '+esc(article.serial):''}</p>${logs.length?`<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>${logs.map(log=>`<tr><td data-label="Data">${formatDate(log.timestamp)}</td><td data-label="Tipo">${esc(log.movementType)}</td><td data-label="Da sede">${esc(getLocationName(log.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(log.toLocationId))}</td><td data-label="Da">${esc(log.fromUserId?getUserName(log.fromUserId):'Home')}</td><td data-label="A">${esc(log.toUserId?getUserName(log.toUserId):'Home')}</td><td data-label="Registrato da">${esc(getUserName(log.recordedByUserId))}</td><td data-label="Nota">${esc(log.note||'-')}</td></tr>`).join('')}</tbody></table>`:`<div class="panel">Nessun movimento registrato.</div>`}<div class="modal-actions"><button class="primary" onclick="closeModal()">Chiudi</button></div>`)
 }
 
-function renderAdminSidebar(){ return `<div class="sidebar"><h3>Area admin</h3><div class="nav"><button class="${currentView==='admin_dashboard'?'active':''}" onclick="setAdminView('admin_dashboard')">Dashboard</button><button class="${currentView==='admin_users'?'active':''}" onclick="setAdminView('admin_users')">Utenti</button><button class="${currentView==='admin_locations'?'active':''}" onclick="setAdminView('admin_locations')">Cantieri / sedi</button><button class="${currentView==='admin_articles'?'active':''}" onclick="setAdminView('admin_articles')">Attrezzature</button><button class="${currentView==='admin_logs'?'active':''}" onclick="setAdminView('admin_logs')">Storico globale</button></div><div class="actions" style="margin-top:14px"><button onclick="logoutAll()">Esci</button><button class="ok" onclick="saveJsonFile()">Salva GitHub</button></div></div>` }
+function renderAdminSidebar(){ return `<div class="sidebar"><h3>Area admin</h3><div class="nav"><button class="${currentView==='admin_dashboard'?'active':''}" onclick="setAdminView('admin_dashboard')">Dashboard</button><button class="${currentView==='admin_users'?'active':''}" onclick="setAdminView('admin_users')">Utenti</button><button class="${currentView==='admin_locations'?'active':''}" onclick="setAdminView('admin_locations')">Cantieri / sedi</button><button class="${currentView==='admin_articles'?'active':''}" onclick="setAdminView('admin_articles')">Attrezzature</button><button class="${currentView==='admin_logs'?'active':''}" onclick="setAdminView('admin_logs')">Storico globale</button></div><div class="actions" style="margin-top:14px"><button onclick="logoutAll()">Esci</button><button class="ok" onclick="saveJsonFile()">Salva GitHub</button><button onclick="resetToken()">Cambia token</button></div></div>` }
 function setAdminView(view){ currentView=view; touchSession(); render() }
 function renderAdminDashboard(){
   const total=db.articles.filter(a=>a.active).length, home=db.articles.filter(a=>a.active&&a.state==='home').length, inUse=db.articles.filter(a=>a.active&&a.state==='in_carico').length, locs=db.locations.filter(l=>l.active).length;
@@ -303,9 +348,9 @@ async function deactivateArticle(id){ if(!confirmDelete("l'articolo selezionato"
 
 function renderAdminLogs(){ return `<div class="panel">${renderTopbar('Storico globale','Tutti i movimenti registrati')}<table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.timestamp)}</td><td data-label="Tipo">${esc(m.movementType)}</td><td data-label="Articolo">${esc(m.articleName)}</td><td data-label="Seriale">${esc(m.articleSerial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td><td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td><td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td><td data-label="Registrato da">${esc(getUserName(m.recordedByUserId))}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('')}</tbody></table></div>` }
 
-window.loadFromGitHub=loadFromGitHub; window.saveJsonFile=saveJsonFile; window.handleImport=handleImport; window.exportDatabase=exportDatabase; window.pinKey=pinKey; window.adminLogin=adminLogin; window.openPinModal=openPinModal; window.userLogin=userLogin; window.selectLocation=selectLocation; window.toggleArticle=toggleArticle; window.openMovementModal=openMovementModal; window.confirmMovement=confirmMovement; window.openHistory=openHistory; window.closeModal=closeModal; window.setAdminView=setAdminView; window.createUser=createUser; window.resetPin=resetPin; window.deactivateUser=deactivateUser; window.reactivateUser=reactivateUser; window.createLocation=createLocation; window.closeLocation=closeLocation; window.reopenLocation=reopenLocation; window.createArticle=createArticle; window.deactivateArticle=deactivateArticle; window.logoutAll=logoutAll;
+window.saveToken=saveToken; window.resetToken=resetToken; window.loadFromGitHub=loadFromGitHub; window.saveJsonFile=saveJsonFile; window.handleImport=handleImport; window.exportDatabase=exportDatabase; window.pinKey=pinKey; window.adminLogin=adminLogin; window.openPinModal=openPinModal; window.userLogin=userLogin; window.selectLocation=selectLocation; window.toggleArticle=toggleArticle; window.openMovementModal=openMovementModal; window.confirmMovement=confirmMovement; window.openHistory=openHistory; window.closeModal=closeModal; window.setAdminView=setAdminView; window.createUser=createUser; window.resetPin=resetPin; window.deactivateUser=deactivateUser; window.reactivateUser=reactivateUser; window.createLocation=createLocation; window.closeLocation=closeLocation; window.reopenLocation=reopenLocation; window.createArticle=createArticle; window.deactivateArticle=deactivateArticle; window.logoutAll=logoutAll;
 
-render();
+if(hasToken()){ render(); } else { renderTokenSetup(); }
 </script>
 </body>
 </html>
