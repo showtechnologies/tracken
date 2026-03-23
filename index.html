@@ -51,7 +51,7 @@ function saveToken(){
   localStorage.setItem("tracken_github_token", token);
   GITHUB_TOKEN = token;
   currentSHA = null;
-  loadFromGitHub();
+  loadFromGitHub(true).catch(err => { console.error(err); });
 }
 function resetToken(){
   if(!confirm("Vuoi rimuovere il token salvato da questo dispositivo?")) return;
@@ -62,7 +62,7 @@ function resetToken(){
   adminLogged = false;
   currentUserId = null;
   currentLocationId = null;
-  if(hasToken()){ render(); } else { renderTokenSetup(); }
+  if(hasToken()){ loadFromGitHub(false).then(ok => { if(!ok) render(); }); } else { renderTokenSetup(); }
 }
 function renderTokenSetup(){
   const app = document.getElementById("app");
@@ -105,6 +105,13 @@ function ensureSession(){ if(sessionExpired()) logoutAll() }
 function confirmDelete(label){ return confirm(`ATTENZIONE: stai per disattivare ${label}. Lo storico resterà nel log, ma la voce non comparirà più nelle liste attive. Vuoi continuare?`) }
 
 function defaultDatabase(){ return null }
+function isGitHubConfigured(){
+  return hasToken() &&
+         !!GITHUB_OWNER &&
+         !!GITHUB_REPO &&
+         !!GITHUB_FILE &&
+         !!GITHUB_BRANCH;
+}
 function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str))); }
 
@@ -256,7 +263,7 @@ function render(){
   if(!hasToken()){ renderTokenSetup(); return; }
   const app=$('#app');
   if(!db){
-    app.innerHTML=`<div class="panel">${renderAlert()}${renderTopbar('Tracken - GitHub','Questa versione legge e aggiorna database.json direttamente nel repository')}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button><button onclick="resetToken()">Cambia token</button></div><p class="small muted" style="margin-top:12px">Inserisci token, owner e repo nelle costanti in alto, poi premi il pulsante di caricamento.</p></div>`;
+    app.innerHTML=`<div class="panel">${renderAlert()}${renderTopbar('Tracken - GitHub','Questa versione legge e aggiorna database.json direttamente nel repository')}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button><button onclick="resetToken()">Cambia token</button></div><p class="small muted" style="margin-top:12px">Se il token è valido premi il pulsante di caricamento. Se compare un errore usa 'Cambia token'.</p></div>`;
     return;
   }
   if(adminLogged){
@@ -350,7 +357,7 @@ function renderAdminLogs(){ return `<div class="panel">${renderTopbar('Storico g
 
 window.saveToken=saveToken; window.resetToken=resetToken; window.loadFromGitHub=loadFromGitHub; window.saveJsonFile=saveJsonFile; window.handleImport=handleImport; window.exportDatabase=exportDatabase; window.pinKey=pinKey; window.adminLogin=adminLogin; window.openPinModal=openPinModal; window.userLogin=userLogin; window.selectLocation=selectLocation; window.toggleArticle=toggleArticle; window.openMovementModal=openMovementModal; window.confirmMovement=confirmMovement; window.openHistory=openHistory; window.closeModal=closeModal; window.setAdminView=setAdminView; window.createUser=createUser; window.resetPin=resetPin; window.deactivateUser=deactivateUser; window.reactivateUser=reactivateUser; window.createLocation=createLocation; window.closeLocation=closeLocation; window.reopenLocation=reopenLocation; window.createArticle=createArticle; window.deactivateArticle=deactivateArticle; window.logoutAll=logoutAll;
 
-if(hasToken()){ render(); } else { renderTokenSetup(); }
+if(hasToken()){ loadFromGitHub(false).then(ok => { if(!ok) render(); }); } else { renderTokenSetup(); }
 </script>
 </body>
 </html>
