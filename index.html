@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gestione Attrezzature - JSON locale</title>
+  <title>Tracken - Gestione Attrezzature (GitHub)</title>
   <style>
     :root{--bg:#f4f7fb;--card:#fff;--text:#1f2937;--muted:#6b7280;--border:#dbe3ee;--primary:#1d4ed8;--ok:#166534;--warn:#92400e;--danger:#b91c1c;--shadow:0 10px 30px rgba(15,23,42,.08);--r:16px}
     *{box-sizing:border-box} body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--text)}
@@ -33,7 +33,7 @@
 <div class="modal" id="modal"><div class="modal-card" id="modalCard"></div></div>
 <script>
 const ADMIN_USER="admin", ADMIN_PASSWORD="admin123", SESSION_TIMEOUT_MINUTES=20;
-const GITHUB_TOKEN="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";
+const GITHUB_TOKEN="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";
 const GITHUB_OWNER="showtechnologies";
 const GITHUB_REPO="tracken";
 const GITHUB_FILE="database.json";
@@ -60,13 +60,7 @@ function logoutAll(){ currentUserId=null; currentLocationId=null; adminLogged=fa
 function ensureSession(){ if(sessionExpired()) logoutAll() }
 function confirmDelete(label){ return confirm(`ATTENZIONE: stai per disattivare ${label}. Lo storico resterà nel log, ma la voce non comparirà più nelle liste attive. Vuoi continuare?`) }
 
-function defaultDatabase(){ return {"config":{"sessionTimeoutMinutes":20,"storageMode":"json-file"},"users":[{"id":"u1","name":"Mario Rossi","pinHash":"cGluOjEyMzQ6djE=","role":"user","active":true,"createdAt":"2024-01-01T10:00:00Z"},{"id":"u2","name":"Luca Bianchi","pinHash":"cGluOjIzNDU6djE=","role":"user","active":true,"createdAt":"2024-01-01T10:00:00Z"}],"locations":[{"id":"l1","name":"Magazzino centrale Recco","type":"magazzino","active":true,"notes":"","createdAt":"2024-01-01T10:00:00Z"},{"id":"l2","name":"Cantiere Rapallo","type":"cantiere","active":true,"notes":"","createdAt":"2024-01-01T10:00:00Z"}],"articles":[{"id":"a1","name":"Trapano Bosch 18V","category":"Trapani","internalCode":"TRP-001","serial":"SN7781","active":true,"locationId":"l2","state":"home","currentHolderUserId":null,"lastKnownUserId":null,"lastMovementAt":null,"lastNote":"","createdAt":"2024-01-01T10:00:00Z"},{"id":"a2","name":"Smerigliatrice Makita 125","category":"Taglio","internalCode":"SMR-002","serial":"","active":true,"locationId":"l1","state":"home","currentHolderUserId":null,"lastKnownUserId":null,"lastMovementAt":null,"lastNote":"","createdAt":"2024-01-01T10:00:00Z"}],"movements":[],"devices":[]} }
-
-function isGitHubConfigured(){
-  return !["INSERISCI_TOKEN","INSERISCI_OWNER","INSERISCI_REPO"].includes(GITHUB_TOKEN) &&
-         !["INSERISCI_TOKEN","INSERISCI_OWNER","INSERISCI_REPO"].includes(GITHUB_OWNER) &&
-         !["INSERISCI_TOKEN","INSERISCI_OWNER","INSERISCI_REPO"].includes(GITHUB_REPO);
-}
+function defaultDatabase(){ return null }
 function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str))); }
 
@@ -114,17 +108,22 @@ async function loadFromGitHub(show=true){
 }
 
 async function saveJsonFile(show=true){
-  if(!db){ showAlert('error','Database non caricato.'); render(); return false; }
+  if(!db){
+    showAlert('error','Database non caricato.');
+    render();
+    return false;
+  }
+  if(!currentSHA){
+    showAlert('error','Carica prima database.json da GitHub.');
+    render();
+    return false;
+  }
   if(!isGitHubConfigured()){
     showAlert('error','Inserisci token, owner e repo nelle costanti in alto.');
     render();
     return false;
   }
   try{
-    if(!currentSHA){
-      const ok = await loadFromGitHub(false);
-      if(!ok) return false;
-    }
     const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}`;
     let res = await fetch(url,{
       method:'PUT',
@@ -158,26 +157,28 @@ async function saveJsonFile(show=true){
       });
     }
 
+    const raw = await res.text();
+    console.log("SAVE STATUS:", res.status);
+    console.log("SAVE BODY:", raw);
+
     if(!res.ok){
-      const txt = await res.text();
-      throw new Error(txt || 'Errore salvataggio GitHub');
+      throw new Error(raw || 'Errore salvataggio GitHub');
     }
-    const data = await res.json();
+
+    const data = JSON.parse(raw);
     currentSHA = data.content.sha;
     if(show) showAlert('ok','database.json aggiornato su GitHub.');
     return true;
   }catch(err){
-    if(show) showAlert('error','Impossibile salvare su GitHub.');
-    console.error(err);
+    console.error("SAVE EXCEPTION:", err);
+    if(show) showAlert('error','Impossibile salvare su GitHub. Apri la console.');
     render();
     return false;
   }
 }
 
 async function importFromFile(file){
-  const text = await file.text();
-  db = JSON.parse(text);
-  showAlert('ok','Database importato in memoria. Premi "Salva su GitHub".');
+  showAlert('error','Importa JSON non disponibile in modalità GitHub.');
   render();
 }
 function exportDatabase(){
@@ -210,7 +211,7 @@ function render(){
   ensureSession();
   const app=$('#app');
   if(!db){
-    app.innerHTML=`<div class="panel">${renderAlert()}${renderTopbar('Gestione attrezzature - GitHub','Questa versione legge e aggiorna database.json direttamente nel repository')}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button><button class="soft" onclick="db=defaultDatabase(); currentSHA=null; render();">Usa database di default</button></div><p class="small muted" style="margin-top:12px">Inserisci token, owner e repo nelle costanti in alto, poi usa il pulsante di caricamento.</p></div>`;
+    app.innerHTML=`<div class="panel">${renderAlert()}${renderTopbar('Tracken - GitHub','Questa versione legge e aggiorna database.json direttamente nel repository')}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button></div><p class="small muted" style="margin-top:12px">Inserisci token, owner e repo nelle costanti in alto, poi premi il pulsante di caricamento.</p></div>`;
     return;
   }
   if(adminLogged){
@@ -223,8 +224,11 @@ function render(){
   app.innerHTML=`${renderAlert()}${renderUserArticles()}`
 }
 
-function renderHome(){ return `<div class="panel">${renderTopbar('Gestione attrezzature - GitHub','Ora il salvataggio aggiorna direttamente database.json nel repository',`<span class="badge">${currentSHA?'database caricato':'database non caricato'}</span>`)}<div class="panel" style="margin-bottom:12px"><h3>Database remoto</h3><div class="actions"><button class="soft" onclick="loadFromGitHub()">Carica database da GitHub</button><button class="ok" onclick="saveJsonFile()">Salva su GitHub</button><button onclick="document.getElementById('importJson').click()">Importa JSON</button><button onclick="exportDatabase()">Esporta copia</button></div><input id="importJson" type="file" accept=".json,application/json" style="display:none" onchange="handleImport(event)"><p class="small muted" style="margin-top:10px">Questa versione usa il repository GitHub come database condiviso. Il file locale non è più necessario.</p></div><div class="grid g2"><div class="panel" style="margin:0"><h3>Login admin</h3><div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" value="admin123"></label></div><div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div></div><div class="panel" style="margin:0"><h3>Operatori</h3><div class="tilegrid">${activeUsers().map(u=>`<button class="tile" onclick="openPinModal('${u.id}')"><strong>${esc(u.name)}</strong><div class="muted small">Tocca e inserisci il PIN</div></button>`).join('')}</div></div></div></div>` }
-function handleImport(event){ const file=event.target.files[0]; if(file) importFromFile(file); event.target.value='' }
+function renderHome(){ return `<div class="panel">${renderTopbar('Tracken - GitHub','Ora il salvataggio aggiorna direttamente database.json nel repository',`<span class="badge">${currentSHA?'database caricato':'database non caricato'}</span>`)}<div class="panel" style="margin-bottom:12px"><h3>Database remoto</h3><div class="actions"><button class="soft" onclick="loadFromGitHub()">Ricarica database da GitHub</button><button class="ok" onclick="saveJsonFile()">Salva su GitHub</button><button onclick="exportDatabase()">Esporta copia</button></div><p class="small muted" style="margin-top:10px">Prima di modificare dati premi almeno una volta "Carica database da GitHub". Le modifiche verranno salvate direttamente nel repository.</p></div><div class="grid g2"><div class="panel" style="margin:0"><h3>Login admin</h3><div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" value="admin123"></label></div><div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div></div><div class="panel" style="margin:0"><h3>Operatori</h3><div class="tilegrid">${activeUsers().map(u=>`<button class="tile" onclick="openPinModal('${u.id}')"><strong>${esc(u.name)}</strong><div class="muted small">Tocca e inserisci il PIN</div></button>`).join('')}</div></div></div></div>` }
+function handleImport(event){
+  showAlert('error','Importa JSON non disponibile in modalità GitHub.');
+  render();
+}
 function adminLogin(){ const u=$('#adminUser').value.trim(), p=$('#adminPass').value; if(u!==ADMIN_USER||p!==ADMIN_PASSWORD){ showAlert('error','Credenziali admin non valide.'); render(); return; } adminLogged=true; currentView='admin_dashboard'; currentSessionId=uid('sess'); touchSession(); render() }
 function openPinModal(userId){ const user=db.users.find(u=>u.id===userId); openModal(`<h3>Accesso utente</h3><p>Hai selezionato <strong>${esc(user.name)}</strong>. Inserisci il PIN.</p><label>PIN<input id="pinInput" type="password" maxlength="8"></label><div class="pinpad">${[1,2,3,4,5,6,7,8,9,'C',0,'←'].map(k=>`<button onclick="pinKey('${k}')">${k}</button>`).join('')}</div><div class="modal-actions"><button onclick="closeModal()">Annulla</button><button class="primary" onclick="userLogin('${userId}')">Entra</button></div>`) }
 function pinKey(k){ const i=$('#pinInput'); if(!i) return; if(k==='C') i.value=''; else if(k==='←') i.value=i.value.slice(0,-1); else i.value+=k }
@@ -301,7 +305,7 @@ function renderAdminLogs(){ return `<div class="panel">${renderTopbar('Storico g
 
 window.loadFromGitHub=loadFromGitHub; window.saveJsonFile=saveJsonFile; window.handleImport=handleImport; window.exportDatabase=exportDatabase; window.pinKey=pinKey; window.adminLogin=adminLogin; window.openPinModal=openPinModal; window.userLogin=userLogin; window.selectLocation=selectLocation; window.toggleArticle=toggleArticle; window.openMovementModal=openMovementModal; window.confirmMovement=confirmMovement; window.openHistory=openHistory; window.closeModal=closeModal; window.setAdminView=setAdminView; window.createUser=createUser; window.resetPin=resetPin; window.deactivateUser=deactivateUser; window.reactivateUser=reactivateUser; window.createLocation=createLocation; window.closeLocation=closeLocation; window.reopenLocation=reopenLocation; window.createArticle=createArticle; window.deactivateArticle=deactivateArticle; window.logoutAll=logoutAll;
 
-if(isGitHubConfigured()){ loadFromGitHub(false); } else { render(); }
+render();
 </script>
 </body>
 </html>
