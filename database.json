@@ -19,6 +19,14 @@
       "role": "user",
       "active": true,
       "createdAt": "2024-01-01T10:00:00Z"
+    },
+    {
+      "id": "u_443a7crj_mn3470ul",
+      "name": "Mariollopesso",
+      "pinHash": "cGluOjExMTE6djE=",
+      "role": "user",
+      "active": true,
+      "createdAt": "2026-03-23T11:40:48.525Z"
     }
   ],
   "locations": [
