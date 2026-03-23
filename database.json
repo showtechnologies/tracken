@@ -77,6 +77,21 @@
       "lastMovementAt": null,
       "lastNote": "",
       "createdAt": "2024-01-01T10:00:00Z"
+    },
+    {
+      "id": "a_htu7rwxp_mn347epc",
+      "name": "pulveriera",
+      "category": "accessori",
+      "internalCode": "",
+      "serial": "",
+      "active": true,
+      "locationId": "l1",
+      "state": "home",
+      "currentHolderUserId": null,
+      "lastKnownUserId": null,
+      "lastMovementAt": null,
+      "lastNote": "",
+      "createdAt": "2026-03-23T11:41:06.480Z"
     }
   ],
   "movements": [],
