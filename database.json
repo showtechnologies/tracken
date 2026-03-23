@@ -71,11 +71,11 @@
       "serial": "",
       "active": true,
       "locationId": "l1",
-      "state": "in_carico",
-      "currentHolderUserId": "u2",
+      "state": "home",
+      "currentHolderUserId": null,
       "lastKnownUserId": "u2",
-      "lastMovementAt": "2026-03-23T15:40:59.336Z",
-      "lastNote": "Ricordati di restituirla",
+      "lastMovementAt": "2026-03-23T21:32:11.011Z",
+      "lastNote": "è rotta",
       "createdAt": "2024-01-01T10:00:00Z"
     },
     {
@@ -95,6 +95,21 @@
     }
   ],
   "movements": [
+    {
+      "id": "mov_b1ola1a4_mn3pbjb7",
+      "timestamp": "2026-03-23T21:32:11.011Z",
+      "movementType": "restituzione",
+      "articleId": "a2",
+      "articleName": "Smerigliatrice Makita 125",
+      "articleSerial": "",
+      "fromLocationId": "l1",
+      "toLocationId": "l1",
+      "fromUserId": "u2",
+      "toUserId": null,
+      "recordedByUserId": "u2",
+      "note": "è rotta",
+      "sessionId": "sess_ampzuobe_mn3pb9at"
+    },
     {
       "id": "mov_j7zp1wtq_mn3kbjne",
       "timestamp": "2026-03-23T19:12:13.370Z",
