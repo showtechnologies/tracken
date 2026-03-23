@@ -86,15 +86,30 @@
       "serial": "",
       "active": true,
       "locationId": "l1",
-      "state": "in_carico",
-      "currentHolderUserId": "u1",
+      "state": "home",
+      "currentHolderUserId": null,
       "lastKnownUserId": "u1",
-      "lastMovementAt": "2026-03-23T11:42:50.344Z",
-      "lastNote": "",
+      "lastMovementAt": "2026-03-23T19:12:13.370Z",
+      "lastNote": "non mi serviva",
       "createdAt": "2026-03-23T11:41:06.480Z"
     }
   ],
   "movements": [
+    {
+      "id": "mov_j7zp1wtq_mn3kbjne",
+      "timestamp": "2026-03-23T19:12:13.370Z",
+      "movementType": "restituzione",
+      "articleId": "a_htu7rwxp_mn347epc",
+      "articleName": "pulveriera",
+      "articleSerial": "",
+      "fromLocationId": "l1",
+      "toLocationId": "l1",
+      "fromUserId": "u1",
+      "toUserId": null,
+      "recordedByUserId": "u_443a7crj_mn3470ul",
+      "note": "non mi serviva",
+      "sessionId": "sess_rl045zl2_mn3kb6a9"
+    },
     {
       "id": "mov_1t7rz8ya_mn3crwaw",
       "timestamp": "2026-03-23T15:40:59.336Z",
