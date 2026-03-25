@@ -102,14 +102,30 @@
       "active": true,
       "locationId": "l1",
       "state": "in_carico",
-      "currentHolderUserId": "u2",
-      "lastKnownUserId": "u2",
-      "lastMovementAt": "2026-03-25T20:08:14.428Z",
+      "currentHolderUserId": "u1",
+      "lastKnownUserId": "u1",
+      "lastMovementAt": "2026-03-25T20:10:56.804Z",
       "lastNote": "",
       "createdAt": "2026-03-25T16:06:04.155Z"
     }
   ],
   "movements": [
+    {
+      "id": "mov_1o3tu894_mn6harok",
+      "timestamp": "2026-03-25T20:10:56.804Z",
+      "movementType": "passaggio",
+      "articleId": "a_495gofw6_mn68jurf",
+      "articleName": "sbucchinatore",
+      "articleSerial": "",
+      "fromLocationId": "l1",
+      "toLocationId": "l1",
+      "fromUserId": "u2",
+      "toUserId": "u1",
+      "recordedByUserId": "u2",
+      "note": "",
+      "imageData": null,
+      "sessionId": "sess_jks7s8nf_mn6h8k9d"
+    },
     {
       "id": "mov_k84hrkga_mn6h7ae4",
       "timestamp": "2026-03-25T20:08:14.428Z",
