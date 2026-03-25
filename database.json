@@ -87,9 +87,9 @@
       "active": true,
       "locationId": "l1",
       "state": "in_carico",
-      "currentHolderUserId": "u_443a7crj_mn3470ul",
-      "lastKnownUserId": "u_443a7crj_mn3470ul",
-      "lastMovementAt": "2026-03-25T17:38:47.407Z",
+      "currentHolderUserId": "u1",
+      "lastKnownUserId": "u1",
+      "lastMovementAt": "2026-03-25T17:39:35.784Z",
       "lastNote": "",
       "createdAt": "2026-03-23T11:41:06.480Z"
     },
@@ -110,6 +110,22 @@
     }
   ],
   "movements": [
+    {
+      "id": "mov_rbroluiy_mn6bw4q0",
+      "timestamp": "2026-03-25T17:39:35.784Z",
+      "movementType": "passaggio",
+      "articleId": "a_htu7rwxp_mn347epc",
+      "articleName": "pulveriera",
+      "articleSerial": "",
+      "fromLocationId": "l1",
+      "toLocationId": "l1",
+      "fromUserId": "u_443a7crj_mn3470ul",
+      "toUserId": "u1",
+      "recordedByUserId": "u_443a7crj_mn3470ul",
+      "note": "",
+      "imageData": null,
+      "sessionId": "sess_fvh6e7p8_mn6bvtj2"
+    },
     {
       "id": "mov_v91bauu4_mn6bv3e7",
       "timestamp": "2026-03-25T17:38:47.407Z",
