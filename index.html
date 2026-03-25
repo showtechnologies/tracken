@@ -762,14 +762,25 @@ async function deleteArticle(id){
   await saveJsonFile(); render();
 }
 
-function renderAdminLogs(){
-  return `<div class="panel">
-    ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
-    <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Nota</th></tr></thead><tbody>
-      ${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.timestamp)}</td><td data-label="Tipo">${esc(movementLabel(m.movementType))}</td><td data-label="Articolo">${esc(m.articleName)}</td><td data-label="Seriale">${esc(m.articleSerial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td><td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td><td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('')}
-    </tbody></table>
-  </div>`;
-}
+  function renderAdminLogs(){
+    return `<div class="panel">
+      ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
+      <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>
+        ${db.movements.map(m=>`<tr>
+          <td data-label="Data">${formatDate(m.timestamp)}</td>
+          <td data-label="Tipo">${esc(movementLabel(m.movementType))}</td>
+          <td data-label="Articolo">${esc(m.articleName)}</td>
+          <td data-label="Seriale">${esc(m.articleSerial||'-')}</td>
+          <td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td>
+          <td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td>
+          <td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td>
+          <td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td>
+          <td data-label="Registrato da">${esc(m.recordedByUserId?getUserName(m.recordedByUserId):'-')}</td>
+          <td data-label="Nota">${esc(m.note||'-')}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }
 
 function pollForRemoteChanges(){
   if(!hasToken() || !db || document.hidden || !navigator.onLine) return;
