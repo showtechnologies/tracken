@@ -575,19 +575,20 @@ async function confirmMovement(type){
 }
 
 function openHistory(articleId){
-  const article=findArticle(articleId), logs=db.movements.filter(m=>m.articleId===articleId);
-  openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?`• ${esc(article.serial)}`:''}</p>
-    ${logs.length ? `<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Nota</th><th>Img</th></tr></thead><tbody>
-      ${logs.map(log=>`<tr>
-        <td data-label="Data">${formatDate(log.timestamp)}</td>
-        <td data-label="Tipo">${esc(movementLabel(log.movementType))}</td>
-        <td data-label="Da sede">${esc(getLocationName(log.fromLocationId))}</td>
-        <td data-label="A sede">${esc(getLocationName(log.toLocationId))}</td>
-        <td data-label="Da">${esc(log.fromUserId?getUserName(log.fromUserId):'Home')}</td>
-        <td data-label="A">${esc(log.toUserId?getUserName(log.toUserId):'Home')}</td>
-        <td data-label="Nota">${esc(log.note||'-')}</td>
-        <td data-label="Img">${log.imageData ? `<img src="${log.imageData}" class="preview-img" style="max-width:120px">` : '-'}</td>
-      </tr>`).join('')}
+    const article=findArticle(articleId), logs=db.movements.filter(m=>m.articleId===articleId);
+    openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?`• ${esc(article.serial)}`:''}</p>
+        ${logs.length ? `<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th><th>Img</th></tr></thead><tbody>
+          ${logs.map(log=>`<tr>
+            <td data-label="Data">${formatDate(log.timestamp)}</td>
+            <td data-label="Tipo">${esc(movementLabel(log.movementType))}</td>
+            <td data-label="Da sede">${esc(getLocationName(log.fromLocationId))}</td>
+            <td data-label="A sede">${esc(getLocationName(log.toLocationId))}</td>
+            <td data-label="Da">${esc(log.fromUserId?getUserName(log.fromUserId):'Home')}</td>
+            <td data-label="A">${esc(log.toUserId?getUserName(log.toUserId):'Home')}</td>
+            <td data-label="Registrato da">${esc(log.recordedByUserId?getUserName(log.recordedByUserId):'-')}</td>
+            <td data-label="Nota">${esc(log.note||'-')}</td>
+            <td data-label="Img">${log.imageData ? `<img src="${log.imageData}" class="preview-img" style="max-width:120px">` : '-'}</td>
+        </tr>`).join('')}
     </tbody></table>` : `<div class="empty">Nessun movimento registrato.</div>`}
     <div class="modal-actions"><button class="primary" onclick="closeModal()">Chiudi</button></div>`);
 }
