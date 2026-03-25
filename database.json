@@ -55,11 +55,11 @@
       "internalCode": "TRP-001",
       "serial": "SN7781",
       "active": true,
-      "locationId": "l2",
+      "locationId": "l1",
       "state": "home",
       "currentHolderUserId": null,
       "lastKnownUserId": "u_443a7crj_mn3470ul",
-      "lastMovementAt": "2026-03-25T20:21:16.011Z",
+      "lastMovementAt": "2026-03-25T20:21:35.873Z",
       "lastNote": "",
       "createdAt": "2024-01-01T10:00:00Z"
     },
@@ -110,6 +110,22 @@
     }
   ],
   "movements": [
+    {
+      "id": "mov_lhl36w1n_mn6hogsh",
+      "timestamp": "2026-03-25T20:21:35.873Z",
+      "movementType": "trasferimento",
+      "articleId": "a1",
+      "articleName": "Trapano Bosch 18V",
+      "articleSerial": "SN7781",
+      "fromLocationId": "l2",
+      "toLocationId": "l1",
+      "fromUserId": null,
+      "toUserId": null,
+      "recordedByUserId": "u2",
+      "note": "",
+      "imageData": null,
+      "sessionId": "sess_zfjbqz1f_mn6him7e"
+    },
     {
       "id": "mov_1l6nuy63_mn6ho1gr",
       "timestamp": "2026-03-25T20:21:16.011Z",
