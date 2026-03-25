@@ -157,7 +157,7 @@ function resetToken(){
 function renderTokenSetup(){
   document.getElementById("app").innerHTML = `
   <div class="panel">
-    ${renderAlert()}
+    <div id="topAlertSlot">${renderAlert()}</div>
     ${renderTopbar('Tracken - Configurazione iniziale','Inserisci il token GitHub una sola volta su questo dispositivo')}
     <div class="panel" style="margin:0">
       <h3>Token GitHub</h3>
@@ -172,8 +172,19 @@ function renderTokenSetup(){
   </div>`;
 }
 
-function showAlert(type,msg){ alertState={type,message:msg}; setTimeout(()=>{ alertState=null; render(); },2500) }
+function showAlert(type,msg){
+  alertState={type,message:msg};
+  renderAlertOnly();
+  setTimeout(()=>{
+    alertState=null;
+    renderAlertOnly();
+  },2500);
+}
 function renderAlert(){ return !alertState?'':`<div class="alert show ${alertState.type}">${esc(alertState.message)}</div>` }
+function renderAlertOnly(){
+  const slot = document.getElementById("topAlertSlot");
+  if(slot) slot.innerHTML = renderAlert();
+}
 function touchSession(){ lastActivityAt=nowIso() }
 function sessionExpired(){ if(!lastActivityAt) return false; return (Date.now()-new Date(lastActivityAt).getTime())>SESSION_TIMEOUT_MINUTES*60*1000 }
 function logoutAll(){ currentUserId=null; currentLocationId=null; adminLogged=false; currentView='home'; selectedArticleIds=[]; currentSessionId=null; lastActivityAt=null; render() }
@@ -410,7 +421,7 @@ function render(){
   if(!hasToken()){ renderTokenSetup(); return; }
   const app=$('#app');
   if(!db){
-    app.innerHTML = `<div class="panel">${renderAlert()}${renderTopbar('Tracken - GitHub','Collega l’app al database online', renderSyncBadge()+` <button onclick="resetToken()">Cambia token</button>`)}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button></div><p class="small muted" style="margin-top:12px">Dopo il primo caricamento, lettura e salvataggio saranno automatici.</p></div>`;
+    app.innerHTML = `<div class="panel"><div id="topAlertSlot">${renderAlert()}</div>${renderTopbar('Tracken - GitHub','Collega l’app al database online', renderSyncBadge()+` <button onclick="resetToken()">Cambia token</button>`)}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button></div><p class="small muted" style="margin-top:12px">Dopo il primo caricamento, lettura e salvataggio saranno automatici.</p></div>`;
     restoreFocus();
     return;
   }
@@ -424,22 +435,22 @@ function render(){
       : currentView==='admin_articles' ? renderAdminArticles()
       : currentView==='admin_logs' ? renderAdminLogs()
       : renderAdminDashboard();
-    app.innerHTML = `<div class="layout">${renderAdminSidebar()}<div>${renderAlert()}<div class="panel" style="margin-bottom:12px">${renderTopbar('Ricerca globale','Admin e operatori possono localizzare rapidamente un articolo', renderSyncBadge())}${searchBox}${results}</div>${body}</div></div>`;
+    app.innerHTML = `<div class="layout">${renderAdminSidebar()}<div><div id="topAlertSlot">${renderAlert()}</div><div class="panel" style="margin-bottom:12px">${renderTopbar('Ricerca globale','Admin e operatori possono localizzare rapidamente un articolo', renderSyncBadge())}${searchBox}${results}</div>${body}</div></div>`;
     restoreFocus();
     return;
   }
 
   if(!currentUserId){
-    app.innerHTML = `${renderAlert()}${renderHome(searchBox, results)}`;
+    app.innerHTML = `<div id="topAlertSlot">${renderAlert()}</div>${renderHome(searchBox, results)}`;
     restoreFocus();
     return;
   }
   if(!currentLocationId){
-    app.innerHTML = `${renderAlert()}${renderUserLanding(searchBox, results)}`;
+    app.innerHTML = `<div id="topAlertSlot">${renderAlert()}</div>${renderUserLanding(searchBox, results)}`;
     restoreFocus();
     return;
   }
-  app.innerHTML = `${renderAlert()}${renderUserArticles(searchBox, results)}${renderStickyActions()}`;
+  app.innerHTML = `<div id="topAlertSlot">${renderAlert()}</div>${renderUserArticles(searchBox, results)}${renderStickyActions()}`;
   restoreFocus();
 }
 
@@ -575,20 +586,20 @@ async function confirmMovement(type){
 }
 
 function openHistory(articleId){
-    const article=findArticle(articleId), logs=db.movements.filter(m=>m.articleId===articleId);
-    openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?`• ${esc(article.serial)}`:''}</p>
-        ${logs.length ? `<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th><th>Img</th></tr></thead><tbody>
-          ${logs.map(log=>`<tr>
-            <td data-label="Data">${formatDate(log.timestamp)}</td>
-            <td data-label="Tipo">${esc(movementLabel(log.movementType))}</td>
-            <td data-label="Da sede">${esc(getLocationName(log.fromLocationId))}</td>
-            <td data-label="A sede">${esc(getLocationName(log.toLocationId))}</td>
-            <td data-label="Da">${esc(log.fromUserId?getUserName(log.fromUserId):'Home')}</td>
-            <td data-label="A">${esc(log.toUserId?getUserName(log.toUserId):'Home')}</td>
-            <td data-label="Registrato da">${esc(log.recordedByUserId?getUserName(log.recordedByUserId):'-')}</td>
-            <td data-label="Nota">${esc(log.note||'-')}</td>
-            <td data-label="Img">${log.imageData ? `<img src="${log.imageData}" class="preview-img" style="max-width:120px">` : '-'}</td>
-        </tr>`).join('')}
+  const article=findArticle(articleId), logs=db.movements.filter(m=>m.articleId===articleId);
+  openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?`• ${esc(article.serial)}`:''}</p>
+    ${logs.length ? `<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th><th>Img</th></tr></thead><tbody>
+      ${logs.map(log=>`<tr>
+        <td data-label="Data">${formatDate(log.timestamp)}</td>
+        <td data-label="Tipo">${esc(movementLabel(log.movementType))}</td>
+        <td data-label="Da sede">${esc(getLocationName(log.fromLocationId))}</td>
+        <td data-label="A sede">${esc(getLocationName(log.toLocationId))}</td>
+        <td data-label="Da">${esc(log.fromUserId?getUserName(log.fromUserId):'Home')}</td>
+        <td data-label="A">${esc(log.toUserId?getUserName(log.toUserId):'Home')}</td>
+        <td data-label="Registrato da">${esc(log.recordedByUserId?getUserName(log.recordedByUserId):'-')}</td>
+        <td data-label="Nota">${esc(log.note||'-')}</td>
+        <td data-label="Img">${log.imageData ? `<img src="${log.imageData}" class="preview-img" style="max-width:120px">` : '-'}</td>
+      </tr>`).join('')}
     </tbody></table>` : `<div class="empty">Nessun movimento registrato.</div>`}
     <div class="modal-actions"><button class="primary" onclick="closeModal()">Chiudi</button></div>`);
 }
@@ -762,25 +773,14 @@ async function deleteArticle(id){
   await saveJsonFile(); render();
 }
 
-  function renderAdminLogs(){
-    return `<div class="panel">
-      ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
-      <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>
-        ${db.movements.map(m=>`<tr>
-          <td data-label="Data">${formatDate(m.timestamp)}</td>
-          <td data-label="Tipo">${esc(movementLabel(m.movementType))}</td>
-          <td data-label="Articolo">${esc(m.articleName)}</td>
-          <td data-label="Seriale">${esc(m.articleSerial||'-')}</td>
-          <td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td>
-          <td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td>
-          <td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td>
-          <td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td>
-          <td data-label="Registrato da">${esc(m.recordedByUserId?getUserName(m.recordedByUserId):'-')}</td>
-          <td data-label="Nota">${esc(m.note||'-')}</td>
-        </tr>`).join('')}
-      </tbody></table>
-    </div>`;
-  }
+function renderAdminLogs(){
+  return `<div class="panel">
+    ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
+    <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>
+      ${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.timestamp)}</td><td data-label="Tipo">${esc(movementLabel(m.movementType))}</td><td data-label="Articolo">${esc(m.articleName)}</td><td data-label="Seriale">${esc(m.articleSerial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td><td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td><td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td><td data-label="Registrato da">${esc(m.recordedByUserId?getUserName(m.recordedByUserId):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+}
 
 function pollForRemoteChanges(){
   if(!hasToken() || !db || document.hidden || !navigator.onLine) return;
@@ -795,7 +795,6 @@ function pollForRemoteChanges(){
         syncState = hasPendingSync() ? "offline" : "idle";
         broadcastLocalUpdate();
         render();
-        showAlert('ok','Aggiornamento ricevuto.');
       }
     }).catch(err => console.error("POLL ERROR:", err));
 }
