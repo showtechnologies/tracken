@@ -92,6 +92,21 @@
       "lastMovementAt": "2026-03-25T09:23:50.801Z",
       "lastNote": "",
       "createdAt": "2026-03-23T11:41:06.480Z"
+    },
+    {
+      "id": "a_495gofw6_mn68jurf",
+      "name": "sbucchinatore",
+      "category": "accessori",
+      "internalCode": "SBUCCHINATORE",
+      "serial": "",
+      "active": true,
+      "locationId": "l1",
+      "state": "home",
+      "currentHolderUserId": null,
+      "lastKnownUserId": null,
+      "lastMovementAt": null,
+      "lastNote": "",
+      "createdAt": "2026-03-25T16:06:04.155Z"
     }
   ],
   "movements": [
