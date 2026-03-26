@@ -240,7 +240,7 @@ function renderOwnedListContent(){
   return owned.length ? owned.map(a=>`<div class="owned-card"><strong>${esc(a.name)}</strong> ${a.serial?`<span class="badge">${esc(a.serial)}</span>`:''}<div class="small muted" style="margin-top:6px">Cantiere / sede: ${esc(getLocationName(a.locationId))}</div><div style="margin-top:8px">${statePill(a)}</div></div>`).join('') : `<div class="empty">Non hai oggetti in carico.</div>`;
 }
 function renderArticleListContent(){
-  const articles = activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
+  const articles=activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
   return filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`;
 }
 function renderAdminLogsBodyContent(){
@@ -253,13 +253,10 @@ function updateLiveViews(){
   renderSyncBadgeOnly();
   const ownedSlot = document.getElementById('ownedListSlot');
   if(ownedSlot) ownedSlot.innerHTML = renderOwnedListContent();
-
   const articleSlot = document.getElementById('articleListSlot');
   if(articleSlot) articleSlot.innerHTML = renderArticleListContent();
-
   const logsBody = document.getElementById('adminLogsBody');
   if(logsBody) logsBody.innerHTML = renderAdminLogsBodyContent();
-
   const globalResults = document.getElementById('globalResultsSlot');
   if(globalResults) globalResults.innerHTML = renderGlobalResultsContent();
 }
@@ -346,7 +343,6 @@ function queueSnapshot(){
   syncState = "offline";
   broadcastLocalUpdate();
   renderSyncBadgeOnly();
-  updateLiveViews();
 }
 function clearQueuedSnapshot(){ localStorage.removeItem(QUEUE_KEY); }
 
@@ -398,20 +394,32 @@ async function saveJsonFile(show=true, fromQueue=false){
         body: JSON.stringify({ message:'update database', content:utf8ToBase64(JSON.stringify(db,null,2)), sha: currentSHA, branch: GITHUB_BRANCH })
       });
     }
+
     const raw = await res.text();
     console.log("SAVE STATUS:", res.status, raw);
+
     if(!res.ok){
       let detail = '';
       try{
         const parsed = JSON.parse(raw);
         detail = parsed?.message || parsed?.error || raw;
-      }catch(e){ detail = raw; }
-      if(res.status===401 || res.status===403) throw new Error('GitHub ha rifiutato il salvataggio: token non valido, scaduto o senza permessi.');
-      if(res.status===404) throw new Error('File o repository non trovato. Controlla repo, branch e database.json.');
-      if(res.status===409 || res.status===422) throw new Error('Conflitto di salvataggio: il database è cambiato mentre stavi lavorando.');
+      }catch(e){
+        detail = raw;
+      }
+
+      if(res.status===401 || res.status===403){
+        throw new Error('GitHub ha rifiutato il salvataggio: token non valido, scaduto o senza permessi.');
+      }
+      if(res.status===404){
+        throw new Error('File o repository non trovato. Controlla repo, branch e database.json.');
+      }
+      if(res.status===409 || res.status===422){
+        throw new Error('Conflitto di salvataggio: il database è cambiato mentre stavi lavorando.');
+      }
       if(detail && detail.length > 180) detail = detail.slice(0,180) + '...';
       throw new Error(detail || `Errore GitHub ${res.status}.`);
     }
+
     const data = JSON.parse(raw);
     currentSHA = data.content.sha;
     if(fromQueue) clearQueuedSnapshot();
@@ -564,7 +572,9 @@ function renderUserLanding(searchBox, results){
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="panel" style="margin-bottom:12px">
       <h3>Recap oggetti in carico a te</h3>
-      <div id="ownedListSlot" class="owned-list">${renderOwnedListContent()}</div>
+      <div id="ownedListSlot" class="owned-list">
+      ${renderOwnedListContent()}
+      </div>
     </div>
     <div class="panel">
       <h3>Selezione sede</h3>
@@ -644,7 +654,7 @@ async function confirmMovement(type){
     if(type==='prelievo' && a.state!=='home'){ showAlert('error',`Prelievo non consentito: ${a.name} non è disponibile in home.`); closeModal(); return; }
     if(type==='restituzione' && a.state!=='in_carico'){ showAlert('error',`Restituzione non consentita: ${a.name} risulta già in home.`); closeModal(); return; }
     if(type==='passaggio' && a.state!=='in_carico'){ showAlert('error',`Passaggio non consentito: ${a.name} deve essere prima preso in carico.`); closeModal(); return; }
-    if(type==='trasferimento' && a.state!=='home'){ showAlert('error',`Trasferimento non consentito: ${a.name} non è in home.`); closeModal(); return; }
+    if(type==='trasferimento' && a.state!=='home'){ showAlert('error',`Trasferimento non consentito: ${a.name} non è in home. Solo gli articoli in home possono essere spostati tra i cantieri.`); closeModal(); return; }
   }
   for(const a of articles){
     const movement = {
@@ -662,7 +672,7 @@ async function confirmMovement(type){
     if(type==='trasferimento'){ a.locationId=targetLocation; a.state='home'; a.currentHolderUserId=null; }
     a.lastMovementAt=movement.timestamp; a.lastNote=note||'';
   }
-  selectedArticleIds=[]; closeModal(); await saveJsonFile(); showAlert('ok', `${movementLabel(type)} completato.`); updateLiveViews();
+  selectedArticleIds=[]; closeModal(); await saveJsonFile(); showAlert('ok', `${movementLabel(type)} completato con successo.`); updateLiveViews();
 }
 
 function openHistory(articleId){
@@ -871,8 +881,7 @@ function pollForRemoteChanges(){
       if(!data) return;
       if(currentSHA && data.sha !== currentSHA){
         currentSHA = data.sha;
-        db = JSON.parse(base64ToUtf8((data.content || "").replace(/
-/g,'')));
+        db = JSON.parse(base64ToUtf8((data.content || "").replace(/\\n/g,'')));
         syncState = hasPendingSync() ? "offline" : "idle";
         broadcastLocalUpdate();
         if(!document.getElementById("modal")?.classList.contains("open")){
