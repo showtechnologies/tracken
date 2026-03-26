@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tracken v2.1 - Gestione Attrezzature</title>
+  <title>Tracken v2.4 - Gestione Attrezzature</title>
   <style>
     :root{
       --bg:#f4f7fb; --card:#ffffff; --text:#1f2937; --muted:#6b7280; --border:#dbe3ee;
@@ -79,6 +79,13 @@
     .stats{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
     .stat{border:1px solid var(--border);border-radius:14px;padding:14px;background:linear-gradient(180deg,#fff,#f8fbff)}
     .stat .value{font-size:1.6rem;font-weight:800;margin-top:6px}
+    .toast-wrap{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:1200;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:min(92vw,520px)}
+    .toast{padding:12px 14px;border-radius:12px;box-shadow:var(--shadow);border:1px solid var(--border);background:#fff;opacity:0;transform:translateY(-8px);transition:all .18s ease}
+    .toast.show{opacity:1;transform:translateY(0)}
+    .toast.ok{background:var(--ok-soft);color:var(--ok);border-color:#bbf7d0}
+    .toast.error{background:var(--danger-soft);color:var(--danger);border-color:#fecaca}
+    .toast.info{background:var(--info-soft);color:var(--info);border-color:#99f6e4}
+    .flash-update{outline:2px solid #93c5fd;transition:outline .6s ease}
     @media(max-width:980px){
       .layout{grid-template-columns:1fr}
       .g4,.g3,.stats{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -105,6 +112,7 @@
   </style>
 </head>
 <body>
+<div id="toastWrap" class="toast-wrap"></div>
 <div class="app" id="app"></div>
 <div class="modal" id="modal"><div class="modal-card" id="modalCard"></div></div>
 <script>
@@ -116,7 +124,7 @@ const GITHUB_FILE="database.json";
 const GITHUB_BRANCH="main";
 const QUEUE_KEY="tracken_pending_snapshot_v21";
 const TAB_SYNC_KEY="tracken_tab_sync_v21";
-const POLL_MS=5000;
+const POLL_MS=2000;
 const tabChannel = ("BroadcastChannel" in window) ? new BroadcastChannel("tracken_sync_channel_v21") : null;
 
 let db=null, currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null, currentSHA=null;
@@ -125,6 +133,7 @@ let modalImageData=null;
 let globalSearchTerm="";
 let locationSearchTerm="";
 let focusState=null;
+let lastRemoteUpdateAt=0;
 const $=s=>document.querySelector(s);
 
 function uid(p='id'){ return `${p}_${Math.random().toString(36).slice(2,10)}_${Date.now().toString(36)}` }
@@ -175,15 +184,38 @@ function renderTokenSetup(){
 function showAlert(type,msg){
   alertState={type,message:msg};
   renderAlertOnly();
+  showToast(type,msg);
   setTimeout(()=>{
     alertState=null;
     renderAlertOnly();
-  },2500);
+  },2200);
+}
+function showToast(type,msg){
+  const wrap = document.getElementById("toastWrap");
+  if(!wrap) return;
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  requestAnimationFrame(()=>el.classList.add("show"));
+  setTimeout(()=>{
+    el.classList.remove("show");
+    setTimeout(()=>el.remove(),180);
+  },1700);
 }
 function renderAlert(){ return !alertState?'':`<div class="alert show ${alertState.type}">${esc(alertState.message)}</div>` }
 function renderAlertOnly(){
   const slot = document.getElementById("topAlertSlot");
   if(slot) slot.innerHTML = renderAlert();
+}
+function renderSyncBadgeOnly(){
+  document.querySelectorAll('[data-sync-badge]').forEach(el=>el.innerHTML = renderSyncBadge());
+}
+function pulseUpdatedUi(){
+  const root = document.getElementById("app");
+  if(!root) return;
+  root.classList.add("flash-update");
+  setTimeout(()=>root.classList.remove("flash-update"), 500);
 }
 function touchSession(){ lastActivityAt=nowIso() }
 function sessionExpired(){ if(!lastActivityAt) return false; return (Date.now()-new Date(lastActivityAt).getTime())>SESSION_TIMEOUT_MINUTES*60*1000 }
@@ -232,10 +264,16 @@ function broadcastLocalUpdate(){
 }
 function applyRemoteTabUpdate(payload){
   if(!payload || payload.type!=="db-updated" || !payload.db) return;
+  if(payload.ts && payload.ts <= lastRemoteUpdateAt) return;
+  lastRemoteUpdateAt = payload.ts || Date.now();
   db = payload.db;
   if(payload.sha) currentSHA = payload.sha;
   syncState = payload.syncState || (hasPendingSync() ? "offline" : "idle");
-  render();
+  renderSyncBadgeOnly();
+  if(!document.getElementById("modal")?.classList.contains("open")){
+    render();
+    pulseUpdatedUi();
+  }
 }
 
 async function loadFromGitHub(show=true){
@@ -244,7 +282,7 @@ async function loadFromGitHub(show=true){
     render(); return false;
   }
   try{
-    syncState = navigator.onLine ? "syncing" : "offline";
+    syncState = navigator.onLine ? "syncing" : "offline"; renderSyncBadgeOnly();
     const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}?ref=${GITHUB_BRANCH}`;
     const res = await fetch(url,{ headers:{ Authorization:`Bearer ${GITHUB_TOKEN}`, Accept:'application/vnd.github+json' } });
     const raw = await res.text();
@@ -259,8 +297,9 @@ async function loadFromGitHub(show=true){
     db = JSON.parse(base64ToUtf8((data.content||"").replace(/\\n/g,'')));
     syncState = hasPendingSync() ? "offline" : "idle";
     broadcastLocalUpdate();
-    if(show) showAlert('ok','database.json caricato da GitHub.');
+    if(show) showAlert('ok','Database aggiornato.');
     render();
+    pulseUpdatedUi();
     await syncPendingIfNeeded();
     return true;
   }catch(err){
@@ -276,7 +315,7 @@ function queueSnapshot(){
   localStorage.setItem(QUEUE_KEY, JSON.stringify({ db, queuedAt: nowIso() }));
   syncState = "offline";
   broadcastLocalUpdate();
-  render();
+  renderSyncBadgeOnly();
 }
 function clearQueuedSnapshot(){ localStorage.removeItem(QUEUE_KEY); }
 
@@ -309,7 +348,7 @@ async function saveJsonFile(show=true, fromQueue=false){
     return false;
   }
   try{
-    syncState="syncing"; render();
+    syncState="syncing"; renderSyncBadgeOnly();
     const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}`;
     let res = await fetch(url,{
       method:'PUT',
@@ -336,7 +375,7 @@ async function saveJsonFile(show=true, fromQueue=false){
     if(fromQueue) clearQueuedSnapshot();
     syncState = hasPendingSync() ? "offline" : "idle";
     broadcastLocalUpdate();
-    if(show) showAlert('ok','Salvato automaticamente su GitHub.');
+    if(show) showAlert('ok','Operazione registrata.');
     return true;
   }catch(err){
     console.error("SAVE EXCEPTION:", err);
@@ -345,7 +384,7 @@ async function saveJsonFile(show=true, fromQueue=false){
     return false;
   }finally{
     if(syncState==="syncing") syncState="idle";
-    render();
+    renderSyncBadgeOnly();
   }
 }
 
@@ -421,7 +460,7 @@ function render(){
   if(!hasToken()){ renderTokenSetup(); return; }
   const app=$('#app');
   if(!db){
-    app.innerHTML = `<div class="panel"><div id="topAlertSlot">${renderAlert()}</div>${renderTopbar('Tracken - GitHub','Collega l’app al database online', renderSyncBadge()+` <button onclick="resetToken()">Cambia token</button>`)}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button></div><p class="small muted" style="margin-top:12px">Dopo il primo caricamento, lettura e salvataggio saranno automatici.</p></div>`;
+    app.innerHTML = `<div class="panel"><div id="topAlertSlot">${renderAlert()}</div>${renderTopbar('Tracken - GitHub','Collega l’app al database online', `<span data-sync-badge>${renderSyncBadge()}</span> <button onclick="resetToken()">Cambia token</button>`)}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button></div><p class="small muted" style="margin-top:12px">Dopo il primo caricamento, lettura e salvataggio saranno automatici.</p></div>`;
     restoreFocus();
     return;
   }
@@ -456,7 +495,7 @@ function render(){
 
 function renderHome(searchBox, results){
   return `<div class="panel">
-    ${renderTopbar('Tracken - GitHub','Lettura e salvataggio automatici attivi', renderSyncBadge()+` <button onclick="resetToken()">Cambia token</button>`)}
+    ${renderTopbar('Tracken - GitHub','Lettura e salvataggio automatici attivi', `<span data-sync-badge>${renderSyncBadge()}</span> <button onclick="resetToken()">Cambia token</button>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}${results}</div>
     <div class="grid g2">
       <div class="panel" style="margin:0">
@@ -478,7 +517,7 @@ function renderHome(searchBox, results){
 function renderUserLanding(searchBox, results){
   const owned = getOwnedArticles();
   return `<div class="panel">
-    ${renderTopbar('Benvenuto','Seleziona un cantiere oppure controlla cosa hai già in carico', `<button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> ${renderSyncBadge()}`)}
+    ${renderTopbar('Benvenuto','Seleziona un cantiere oppure controlla cosa hai già in carico', `<button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}${results}</div>
     <div class="panel" style="margin-bottom:12px">
       <h3>Recap oggetti in carico a te</h3>
@@ -499,7 +538,7 @@ function selectLocation(id){ currentLocationId=id; selectedArticleIds=[]; locati
 function renderUserArticles(searchBox, results){
   const articles=activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
   return `<div class="panel">
-    ${renderTopbar(getLocationName(currentLocationId),'Seleziona uno o più articoli', `<button onclick="currentLocationId=null;selectedArticleIds=[];locationSearchTerm='';render()">Cambia sede</button><button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> ${renderSyncBadge()}`)}
+    ${renderTopbar(getLocationName(currentLocationId),'Seleziona uno o più articoli', `<button onclick="currentLocationId=null;selectedArticleIds=[];locationSearchTerm='';render()">Cambia sede</button><button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}${results}</div>
     <div class="actions" style="margin-bottom:12px">
       <label class="grow">Ricerca nel cantiere<input id="searchArticles" placeholder="Nome, codice o seriale" value="${esc(locationSearchTerm)}" oninput="setLocationSearch(this.value, this.selectionStart)"></label>
@@ -561,10 +600,10 @@ async function confirmMovement(type){
   if(type==='passaggio'&&!targetUser){ showAlert('error','Seleziona il collega destinatario.'); closeModal(); return; }
   if(type==='trasferimento'&&!targetLocation){ showAlert('error','Seleziona la sede di destinazione.'); closeModal(); return; }
   for(const a of articles){
-    if(type==='prelievo' && a.state!=='home'){ showAlert('error',`L'articolo ${a.name} non è in home.`); closeModal(); return; }
-    if(type==='restituzione' && a.state!=='in_carico'){ showAlert('error',`L'articolo ${a.name} risulta già in home.`); closeModal(); return; }
-    if(type==='passaggio' && a.state!=='in_carico'){ showAlert('error',`L'articolo ${a.name} deve essere in carico per il passaggio.`); closeModal(); return; }
-    if(type==='trasferimento' && a.state!=='home'){ showAlert('error',`L'articolo ${a.name} può essere trasferito solo quando è in home.`); closeModal(); return; }
+    if(type==='prelievo' && a.state!=='home'){ showAlert('error',`Prelievo non consentito: ${a.name} non è disponibile in home.`); closeModal(); return; }
+    if(type==='restituzione' && a.state!=='in_carico'){ showAlert('error',`Restituzione non consentita: ${a.name} risulta già in home.`); closeModal(); return; }
+    if(type==='passaggio' && a.state!=='in_carico'){ showAlert('error',`Passaggio non consentito: ${a.name} deve essere prima preso in carico.`); closeModal(); return; }
+    if(type==='trasferimento' && a.state!=='home'){ showAlert('error',`Trasferimento non consentito: ${a.name} non è in home.`); closeModal(); return; }
   }
   for(const a of articles){
     const movement = {
@@ -582,7 +621,7 @@ async function confirmMovement(type){
     if(type==='trasferimento'){ a.locationId=targetLocation; a.state='home'; a.currentHolderUserId=null; }
     a.lastMovementAt=movement.timestamp; a.lastNote=note||'';
   }
-  selectedArticleIds=[]; closeModal(); await saveJsonFile(); render();
+  selectedArticleIds=[]; closeModal(); await saveJsonFile(); showAlert('ok', `${movementLabel(type)} completato.`); render();
 }
 
 function openHistory(articleId){
@@ -791,10 +830,14 @@ function pollForRemoteChanges(){
       if(!data) return;
       if(currentSHA && data.sha !== currentSHA){
         currentSHA = data.sha;
-        db = JSON.parse(base64ToUtf8((data.content || "").replace(/\\n/g,'')));
+        db = JSON.parse(base64ToUtf8((data.content || "").replace(/\n/g,'')));
         syncState = hasPendingSync() ? "offline" : "idle";
         broadcastLocalUpdate();
-        render();
+        renderSyncBadgeOnly();
+        if(!document.getElementById("modal")?.classList.contains("open")){
+          render();
+          pulseUpdatedUi();
+        }
       }
     }).catch(err => console.error("POLL ERROR:", err));
 }
