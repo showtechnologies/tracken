@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tracken v2.4 - Gestione Attrezzature</title>
+  <title>Tracken v2.5 - Gestione Attrezzature</title>
   <style>
     :root{
       --bg:#f4f7fb; --card:#ffffff; --text:#1f2937; --muted:#6b7280; --border:#dbe3ee;
@@ -235,6 +235,35 @@ function statePill(a){
   return main + (mine ? ` ${mine}` : '');
 }
 
+function renderOwnedListContent(){
+  const owned = getOwnedArticles();
+  return owned.length ? owned.map(a=>`<div class="owned-card"><strong>${esc(a.name)}</strong> ${a.serial?`<span class="badge">${esc(a.serial)}</span>`:''}<div class="small muted" style="margin-top:6px">Cantiere / sede: ${esc(getLocationName(a.locationId))}</div><div style="margin-top:8px">${statePill(a)}</div></div>`).join('') : `<div class="empty">Non hai oggetti in carico.</div>`;
+}
+function renderArticleListContent(){
+  const articles = activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
+  return filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`;
+}
+function renderAdminLogsBodyContent(){
+  return db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.timestamp)}</td><td data-label="Tipo">${esc(movementLabel(m.movementType))}</td><td data-label="Articolo">${esc(m.articleName)}</td><td data-label="Seriale">${esc(m.articleSerial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td><td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td><td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td><td data-label="Registrato da">${esc(m.recordedByUserId?getUserName(m.recordedByUserId):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('');
+}
+function renderGlobalResultsContent(){
+  return globalSearchTerm ? renderGlobalSearchResults() : '';
+}
+function updateLiveViews(){
+  renderSyncBadgeOnly();
+  const ownedSlot = document.getElementById('ownedListSlot');
+  if(ownedSlot) ownedSlot.innerHTML = renderOwnedListContent();
+
+  const articleSlot = document.getElementById('articleListSlot');
+  if(articleSlot) articleSlot.innerHTML = renderArticleListContent();
+
+  const logsBody = document.getElementById('adminLogsBody');
+  if(logsBody) logsBody.innerHTML = renderAdminLogsBodyContent();
+
+  const globalResults = document.getElementById('globalResultsSlot');
+  if(globalResults) globalResults.innerHTML = renderGlobalResultsContent();
+}
+
 function getSearchResults(q){
   const needle=(q||"").trim().toLowerCase();
   if(!needle || !db) return [];
@@ -269,10 +298,11 @@ function applyRemoteTabUpdate(payload){
   db = payload.db;
   if(payload.sha) currentSHA = payload.sha;
   syncState = payload.syncState || (hasPendingSync() ? "offline" : "idle");
-  renderSyncBadgeOnly();
-  if(!document.getElementById("modal")?.classList.contains("open")){
-    render();
+  if(document.getElementById('app') && !document.getElementById("modal")?.classList.contains("open")){
+    updateLiveViews();
     pulseUpdatedUi();
+  } else {
+    render();
   }
 }
 
@@ -316,6 +346,7 @@ function queueSnapshot(){
   syncState = "offline";
   broadcastLocalUpdate();
   renderSyncBadgeOnly();
+  updateLiveViews();
 }
 function clearQueuedSnapshot(){ localStorage.removeItem(QUEUE_KEY); }
 
@@ -332,7 +363,7 @@ async function syncPendingIfNeeded(){
     clearQueuedSnapshot();
     syncState="idle";
     showAlert('ok','Modifiche offline sincronizzate.');
-    render();
+    updateLiveViews();
     return true;
   }
   return false;
@@ -359,7 +390,7 @@ async function saveJsonFile(show=true, fromQueue=false){
     if(res.status===409 || res.status===422){
       const pendingDb = JSON.parse(JSON.stringify(db));
       const reloadOk = await loadFromGitHub(false);
-      if(!reloadOk) throw new Error('Conflitto SHA');
+      if(!reloadOk) throw new Error('Conflitto di versione: impossibile ricaricare il database remoto.');
       db = pendingDb;
       res = await fetch(url,{
         method:'PUT',
@@ -369,7 +400,18 @@ async function saveJsonFile(show=true, fromQueue=false){
     }
     const raw = await res.text();
     console.log("SAVE STATUS:", res.status, raw);
-    if(!res.ok) throw new Error(raw || 'Errore salvataggio GitHub');
+    if(!res.ok){
+      let detail = '';
+      try{
+        const parsed = JSON.parse(raw);
+        detail = parsed?.message || parsed?.error || raw;
+      }catch(e){ detail = raw; }
+      if(res.status===401 || res.status===403) throw new Error('GitHub ha rifiutato il salvataggio: token non valido, scaduto o senza permessi.');
+      if(res.status===404) throw new Error('File o repository non trovato. Controlla repo, branch e database.json.');
+      if(res.status===409 || res.status===422) throw new Error('Conflitto di salvataggio: il database è cambiato mentre stavi lavorando.');
+      if(detail && detail.length > 180) detail = detail.slice(0,180) + '...';
+      throw new Error(detail || `Errore GitHub ${res.status}.`);
+    }
     const data = JSON.parse(raw);
     currentSHA = data.content.sha;
     if(fromQueue) clearQueuedSnapshot();
@@ -380,7 +422,8 @@ async function saveJsonFile(show=true, fromQueue=false){
   }catch(err){
     console.error("SAVE EXCEPTION:", err);
     queueSnapshot();
-    if(show) showAlert('info','Salvataggio non riuscito: modifiche messe in coda.');
+    const msg = err?.message ? `Salvataggio non riuscito: ${err.message} Modifiche messe in coda.` : 'Salvataggio non riuscito: modifiche messe in coda.';
+    if(show) showAlert('info', msg);
     return false;
   }finally{
     if(syncState==="syncing") syncState="idle";
@@ -474,7 +517,7 @@ function render(){
       : currentView==='admin_articles' ? renderAdminArticles()
       : currentView==='admin_logs' ? renderAdminLogs()
       : renderAdminDashboard();
-    app.innerHTML = `<div class="layout">${renderAdminSidebar()}<div><div id="topAlertSlot">${renderAlert()}</div><div class="panel" style="margin-bottom:12px">${renderTopbar('Ricerca globale','Admin e operatori possono localizzare rapidamente un articolo', renderSyncBadge())}${searchBox}${results}</div>${body}</div></div>`;
+    app.innerHTML = `<div class="layout">${renderAdminSidebar()}<div><div id="topAlertSlot">${renderAlert()}</div><div class="panel" style="margin-bottom:12px">${renderTopbar('Ricerca globale','Admin e operatori possono localizzare rapidamente un articolo', renderSyncBadge())}${searchBox}<div id="globalResultsSlot">${results}</div></div>${body}</div></div>`;
     restoreFocus();
     return;
   }
@@ -496,7 +539,7 @@ function render(){
 function renderHome(searchBox, results){
   return `<div class="panel">
     ${renderTopbar('Tracken - GitHub','Lettura e salvataggio automatici attivi', `<span data-sync-badge>${renderSyncBadge()}</span> <button onclick="resetToken()">Cambia token</button>`)}
-    <div class="panel" style="margin-bottom:12px">${searchBox}${results}</div>
+    <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="grid g2">
       <div class="panel" style="margin:0">
         <h3>Login admin</h3>
@@ -518,12 +561,10 @@ function renderUserLanding(searchBox, results){
   const owned = getOwnedArticles();
   return `<div class="panel">
     ${renderTopbar('Benvenuto','Seleziona un cantiere oppure controlla cosa hai già in carico', `<button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
-    <div class="panel" style="margin-bottom:12px">${searchBox}${results}</div>
+    <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="panel" style="margin-bottom:12px">
       <h3>Recap oggetti in carico a te</h3>
-      <div class="owned-list">
-      ${owned.length ? owned.map(a=>`<div class="owned-card"><strong>${esc(a.name)}</strong> ${a.serial?`<span class="badge">${esc(a.serial)}</span>`:''}<div class="small muted" style="margin-top:6px">Cantiere / sede: ${esc(getLocationName(a.locationId))}</div><div style="margin-top:8px">${statePill(a)}</div></div>`).join('') : `<div class="empty">Non hai oggetti in carico.</div>`}
-      </div>
+      <div id="ownedListSlot" class="owned-list">${renderOwnedListContent()}</div>
     </div>
     <div class="panel">
       <h3>Selezione sede</h3>
@@ -539,12 +580,12 @@ function renderUserArticles(searchBox, results){
   const articles=activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
   return `<div class="panel">
     ${renderTopbar(getLocationName(currentLocationId),'Seleziona uno o più articoli', `<button onclick="currentLocationId=null;selectedArticleIds=[];locationSearchTerm='';render()">Cambia sede</button><button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
-    <div class="panel" style="margin-bottom:12px">${searchBox}${results}</div>
+    <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="actions" style="margin-bottom:12px">
       <label class="grow">Ricerca nel cantiere<input id="searchArticles" placeholder="Nome, codice o seriale" value="${esc(locationSearchTerm)}" oninput="setLocationSearch(this.value, this.selectionStart)"></label>
     </div>
-    <div class="article-list">
-      ${filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`}
+    <div id="articleListSlot" class="article-list">
+      ${renderArticleListContent()}
     </div>
   </div>`;
 }
@@ -621,7 +662,7 @@ async function confirmMovement(type){
     if(type==='trasferimento'){ a.locationId=targetLocation; a.state='home'; a.currentHolderUserId=null; }
     a.lastMovementAt=movement.timestamp; a.lastNote=note||'';
   }
-  selectedArticleIds=[]; closeModal(); await saveJsonFile(); showAlert('ok', `${movementLabel(type)} completato.`); render();
+  selectedArticleIds=[]; closeModal(); await saveJsonFile(); showAlert('ok', `${movementLabel(type)} completato.`); updateLiveViews();
 }
 
 function openHistory(articleId){
@@ -815,8 +856,8 @@ async function deleteArticle(id){
 function renderAdminLogs(){
   return `<div class="panel">
     ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
-    <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>
-      ${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.timestamp)}</td><td data-label="Tipo">${esc(movementLabel(m.movementType))}</td><td data-label="Articolo">${esc(m.articleName)}</td><td data-label="Seriale">${esc(m.articleSerial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td><td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td><td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td><td data-label="Registrato da">${esc(m.recordedByUserId?getUserName(m.recordedByUserId):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('')}
+    <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody id="adminLogsBody">
+      ${renderAdminLogsBodyContent()}
     </tbody></table>
   </div>`;
 }
@@ -830,13 +871,15 @@ function pollForRemoteChanges(){
       if(!data) return;
       if(currentSHA && data.sha !== currentSHA){
         currentSHA = data.sha;
-        db = JSON.parse(base64ToUtf8((data.content || "").replace(/\n/g,'')));
+        db = JSON.parse(base64ToUtf8((data.content || "").replace(/
+/g,'')));
         syncState = hasPendingSync() ? "offline" : "idle";
         broadcastLocalUpdate();
-        renderSyncBadgeOnly();
         if(!document.getElementById("modal")?.classList.contains("open")){
-          render();
+          updateLiveViews();
           pulseUpdatedUi();
+        } else {
+          renderSyncBadgeOnly();
         }
       }
     }).catch(err => console.error("POLL ERROR:", err));
