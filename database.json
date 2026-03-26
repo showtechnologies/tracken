@@ -86,10 +86,10 @@
       "serial": "",
       "active": true,
       "locationId": "l1",
-      "state": "home",
-      "currentHolderUserId": null,
+      "state": "in_carico",
+      "currentHolderUserId": "u_443a7crj_mn3470ul",
       "lastKnownUserId": "u_443a7crj_mn3470ul",
-      "lastMovementAt": "2026-03-26T11:34:52.963Z",
+      "lastMovementAt": "2026-03-26T11:35:48.651Z",
       "lastNote": "",
       "createdAt": "2026-03-23T11:41:06.480Z"
     },
@@ -111,8 +111,24 @@
   ],
   "movements": [
     {
-      "id": "mov_3s28wm0z_mn7eayhv",
-      "timestamp": "2026-03-26T11:34:52.963Z",
+      "id": "mov_kum7qoz8_mn7ec5gr",
+      "timestamp": "2026-03-26T11:35:48.651Z",
+      "movementType": "prelievo",
+      "articleId": "a_htu7rwxp_mn347epc",
+      "articleName": "pulveriera",
+      "articleSerial": "",
+      "fromLocationId": "l1",
+      "toLocationId": "l1",
+      "fromUserId": null,
+      "toUserId": "u_443a7crj_mn3470ul",
+      "recordedByUserId": "u_443a7crj_mn3470ul",
+      "note": "",
+      "imageData": null,
+      "sessionId": "sess_7d7w0oar_mn7ebv63"
+    },
+    {
+      "id": "mov_o5ibuibf_mn7eaemu",
+      "timestamp": "2026-03-26T11:34:27.222Z",
       "movementType": "restituzione",
       "articleId": "a_htu7rwxp_mn347epc",
       "articleName": "pulveriera",
@@ -124,7 +140,7 @@
       "recordedByUserId": "u_443a7crj_mn3470ul",
       "note": "",
       "imageData": null,
-      "sessionId": "sess_ry0waaim_mn7eartd"
+      "sessionId": "sess_l18b2j1u_mn7ea5py"
     },
     {
       "id": "mov_rdmy2m43_mn6bsgre",
