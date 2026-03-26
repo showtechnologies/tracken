@@ -1,9 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tracken v2.5 - Gestione Attrezzature</title>
+  <title>Tracken Supabase v1</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
       --bg:#f4f7fb; --card:#ffffff; --text:#1f2937; --muted:#6b7280; --border:#dbe3ee;
@@ -20,14 +22,9 @@
     .layout{display:grid;grid-template-columns:260px 1fr;gap:14px}
     .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:12px}
     .top h1,.top h2,.top h3{margin:0}
-    .top p,.muted{color:var(--muted)}
-    .small{font-size:.84rem}
-    .actions{display:flex;flex-wrap:wrap;gap:8px}
-    .grid{display:grid;gap:12px}
-    .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
-    .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
-    .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
-    .grow{flex:1}
+    .top p,.muted{color:var(--muted)} .small{font-size:.84rem}
+    .actions{display:flex;flex-wrap:wrap;gap:8px} .grow{flex:1}
+    .grid{display:grid;gap:12px}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
     button{border:1px solid var(--border);background:#fff;padding:11px 12px;border-radius:12px;cursor:pointer;min-height:44px}
     button:hover{transform:translateY(-1px)}
     .primary{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:700}
@@ -47,8 +44,8 @@
     .pill.home{background:var(--ok-soft);color:var(--ok)}
     .pill.incarico{background:var(--warn-soft);color:var(--warn)}
     .pill.mine{background:var(--primary-soft);color:var(--primary)}
-    .pill.offline{background:var(--danger-soft);color:var(--danger)}
     .pill.sync{background:var(--info-soft);color:var(--info)}
+    .pill.error{background:var(--danger-soft);color:var(--danger)}
     .pill.cantiere{background:#e0f2fe;color:#0369a1}
     .pill.magazzino{background:#ede9fe;color:#6d28d9}
     .article-list,.owned-list,.result-list{display:flex;flex-direction:column;gap:10px}
@@ -60,136 +57,60 @@
     .alert.ok{background:var(--ok-soft);color:var(--ok);border:1px solid #bbf7d0}
     .alert.error{background:var(--danger-soft);color:var(--danger);border:1px solid #fecaca}
     .alert.info{background:var(--info-soft);color:var(--info);border:1px solid #99f6e4}
-    .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:12px;z-index:1000}
-    .modal.open{display:flex}
-    .modal-card{width:min(860px,100%);max-height:92vh;overflow:auto;padding:18px}
-    .modal-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px}
-    .pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
-    .pinpad button{font-weight:800}
-    .sidebar .nav{display:flex;flex-direction:column;gap:8px}
-    .sidebar .nav button.active{background:var(--primary-soft);color:var(--primary);border-color:#bfdbfe;font-weight:700}
-    table{width:100%;border-collapse:collapse}
-    th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border);vertical-align:top}
-    th{font-size:.8rem;text-transform:uppercase;color:var(--muted)}
-    .sticky-bar{position:fixed;left:10px;right:10px;bottom:10px;z-index:900}
-    .sticky-bar .actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-    .preview-img{max-width:100%;border-radius:12px;border:1px solid var(--border)}
-    .syncbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .empty{padding:16px;border:1px dashed var(--border);border-radius:14px;background:#fff}
-    .stats{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
-    .stat{border:1px solid var(--border);border-radius:14px;padding:14px;background:linear-gradient(180deg,#fff,#f8fbff)}
-    .stat .value{font-size:1.6rem;font-weight:800;margin-top:6px}
     .toast-wrap{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:1200;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:min(92vw,520px)}
     .toast{padding:12px 14px;border-radius:12px;box-shadow:var(--shadow);border:1px solid var(--border);background:#fff;opacity:0;transform:translateY(-8px);transition:all .18s ease}
     .toast.show{opacity:1;transform:translateY(0)}
     .toast.ok{background:var(--ok-soft);color:var(--ok);border-color:#bbf7d0}
     .toast.error{background:var(--danger-soft);color:var(--danger);border-color:#fecaca}
     .toast.info{background:var(--info-soft);color:var(--info);border-color:#99f6e4}
-    .flash-update{outline:2px solid #93c5fd;transition:outline .6s ease}
-    @media(max-width:980px){
-      .layout{grid-template-columns:1fr}
-      .g4,.g3,.stats{grid-template-columns:repeat(2,minmax(0,1fr))}
-      .article{grid-template-columns:34px 1fr 1fr}
-      .article>:last-child{grid-column:2/-1}
-    }
-    @media(max-width:720px){
-      .app{padding:10px;padding-bottom:110px}
-      .g2,.g3,.g4,.stats{grid-template-columns:1fr}
-      .actions,.modal-actions{flex-direction:column}
-      .actions button,.modal-actions button{width:100%}
-      .sticky-bar{left:8px;right:8px;bottom:8px;padding:10px}
-      .sticky-bar .actions{grid-template-columns:repeat(2,minmax(0,1fr))}
-      .article{grid-template-columns:28px 1fr}
-      .article>div,.article>button{grid-column:2}
-      .panel,.sidebar,.sticky-bar{padding:12px}
-      table,thead,tbody,tr,th,td{display:block}
-      thead{display:none}
-      table{border-collapse:separate;border-spacing:0 8px}
-      tbody tr{background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:var(--shadow)}
-      td{border:0;padding:5px 2px}
-      td::before{content:attr(data-label);display:block;font-size:.74rem;font-weight:700;color:var(--muted);margin-bottom:3px}
-    }
+    .modal{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:12px;z-index:1000}
+    .modal.open{display:flex}
+    .modal-card{width:min(860px,100%);max-height:92vh;overflow:auto;padding:18px}
+    .modal-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px}
+    .pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}.pinpad button{font-weight:800}
+    .sidebar .nav{display:flex;flex-direction:column;gap:8px}.sidebar .nav button.active{background:var(--primary-soft);color:var(--primary);border-color:#bfdbfe;font-weight:700}
+    table{width:100%;border-collapse:collapse}
+    th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border);vertical-align:top}
+    th{font-size:.8rem;text-transform:uppercase;color:var(--muted)}
+    .sticky-bar{position:fixed;left:10px;right:10px;bottom:10px;z-index:900}
+    .sticky-bar .actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .preview-img{max-width:100%;border-radius:12px;border:1px solid var(--border)}
+    .empty{padding:16px;border:1px dashed var(--border);border-radius:14px;background:#fff}
+    .stats{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
+    .stat{border:1px solid var(--border);border-radius:14px;padding:14px;background:linear-gradient(180deg,#fff,#f8fbff)} .stat .value{font-size:1.6rem;font-weight:800;margin-top:6px}
+    @media(max-width:980px){.layout{grid-template-columns:1fr}.g4,.g3,.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.article{grid-template-columns:34px 1fr 1fr}.article>:last-child{grid-column:2/-1}}
+    @media(max-width:720px){.app{padding:10px;padding-bottom:110px}.g2,.g3,.g4,.stats{grid-template-columns:1fr}.actions,.modal-actions{flex-direction:column}.actions button,.modal-actions button{width:100%}.sticky-bar{left:8px;right:8px;bottom:8px;padding:10px}.sticky-bar .actions{grid-template-columns:repeat(2,minmax(0,1fr))}.article{grid-template-columns:28px 1fr}.article>div,.article>button{grid-column:2}.panel,.sidebar,.sticky-bar{padding:12px}table,thead,tbody,tr,th,td{display:block}thead{display:none}table{border-collapse:separate;border-spacing:0 8px}tbody tr{background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:var(--shadow)}td{border:0;padding:5px 2px}td::before{content:attr(data-label);display:block;font-size:.74rem;font-weight:700;color:var(--muted);margin-bottom:3px}}
   </style>
 </head>
 <body>
 <div id="toastWrap" class="toast-wrap"></div>
 <div class="app" id="app"></div>
 <div class="modal" id="modal"><div class="modal-card" id="modalCard"></div></div>
-<script>
-const ADMIN_USER="admin", ADMIN_PASSWORD="admin123", SESSION_TIMEOUT_MINUTES=20;
-let GITHUB_TOKEN = localStorage.getItem("tracken_github_token") || "";
-const GITHUB_OWNER="showtechnologies";
-const GITHUB_REPO="tracken";
-const GITHUB_FILE="database.json";
-const GITHUB_BRANCH="main";
-const QUEUE_KEY="tracken_pending_snapshot_v21";
-const TAB_SYNC_KEY="tracken_tab_sync_v21";
-const POLL_MS=2000;
-const tabChannel = ("BroadcastChannel" in window) ? new BroadcastChannel("tracken_sync_channel_v21") : null;
 
-let db=null, currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null, currentSHA=null;
-let syncState="idle";
-let modalImageData=null;
-let globalSearchTerm="";
-let locationSearchTerm="";
-let focusState=null;
-let lastRemoteUpdateAt=0;
+<script>
+const SUPABASE_URL = "https://ytmvwotpniiortfagjbl.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0bXZ3b3Rwbmlpb3J0ZmFnamJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTAyNDQsImV4cCI6MjA5MDEyNjI0NH0.dPkJcQGjJaedpicj1QARqzJjrWyGnXAui8I80FQNozs";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const ADMIN_USER="admin", ADMIN_PASSWORD="admin123", SESSION_TIMEOUT_MINUTES=20;
+
+let db = { users:[], locations:[], articles:[], movements:[] };
+let currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null;
+let modalImageData=null, globalSearchTerm="", locationSearchTerm="", focusState=null, syncState="idle";
+let rtChannel = null;
+
 const $=s=>document.querySelector(s);
 
-function uid(p='id'){ return `${p}_${Math.random().toString(36).slice(2,10)}_${Date.now().toString(36)}` }
-function nowIso(){ return new Date().toISOString() }
-function formatDate(iso){ return iso ? new Date(iso).toLocaleString('it-IT') : '-' }
-function esc(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;') }
-function hashPin(pin){ return btoa(`pin:${pin}:v1`) }
-function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
-function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str))); }
+function uid(){ return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2,9)}`; }
+function nowIso(){ return new Date().toISOString(); }
+function formatDate(iso){ return iso ? new Date(iso).toLocaleString('it-IT') : '-'; }
+function esc(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
+function hashPin(pin){ return btoa(`pin:${pin}:v1`); }
+function touchSession(){ lastActivityAt = nowIso(); }
+function sessionExpired(){ if(!lastActivityAt) return false; return (Date.now() - new Date(lastActivityAt).getTime()) > SESSION_TIMEOUT_MINUTES*60*1000; }
+function ensureSession(){ if(sessionExpired()) logoutAll(); }
+function logoutAll(){ currentUserId=null; currentLocationId=null; adminLogged=false; currentView='home'; selectedArticleIds=[]; currentSessionId=null; lastActivityAt=null; render(); }
 
-function hasToken(){ return !!(GITHUB_TOKEN && GITHUB_TOKEN.trim()); }
-function isGitHubConfigured(){ return hasToken() && !!GITHUB_OWNER && !!GITHUB_REPO && !!GITHUB_FILE && !!GITHUB_BRANCH; }
-function pendingSnapshot(){ try { return JSON.parse(localStorage.getItem(QUEUE_KEY)||"null"); } catch(e){ return null; } }
-function hasPendingSync(){ return !!pendingSnapshot(); }
-
-function saveToken(){
-  const token = document.getElementById("tokenInput")?.value?.trim() || "";
-  if(!token){ alert("Inserisci il token GitHub."); return; }
-  localStorage.setItem("tracken_github_token", token);
-  GITHUB_TOKEN = token;
-  currentSHA = null;
-  loadFromGitHub(true).catch(console.error);
-}
-function resetToken(){
-  if(!confirm("Vuoi rimuovere il token salvato da questo dispositivo?")) return;
-  localStorage.removeItem("tracken_github_token");
-  GITHUB_TOKEN=""; currentSHA=null; db=null; adminLogged=false; currentUserId=null; currentLocationId=null;
-  render();
-}
-function renderTokenSetup(){
-  document.getElementById("app").innerHTML = `
-  <div class="panel">
-    <div id="topAlertSlot">${renderAlert()}</div>
-    ${renderTopbar('Tracken - Configurazione iniziale','Inserisci il token GitHub una sola volta su questo dispositivo')}
-    <div class="panel" style="margin:0">
-      <h3>Token GitHub</h3>
-      <p class="small muted">Il token verrà salvato solo in questo browser.</p>
-      <label>Token GitHub
-        <input id="tokenInput" type="password" placeholder="github_pat_..." autocomplete="off" autocapitalize="off" spellcheck="false">
-      </label>
-      <div class="actions" style="margin-top:12px">
-        <button class="primary" onclick="saveToken()">Salva token e collega GitHub</button>
-      </div>
-    </div>
-  </div>`;
-}
-
-function showAlert(type,msg){
-  alertState={type,message:msg};
-  renderAlertOnly();
-  showToast(type,msg);
-  setTimeout(()=>{
-    alertState=null;
-    renderAlertOnly();
-  },2200);
-}
 function showToast(type,msg){
   const wrap = document.getElementById("toastWrap");
   if(!wrap) return;
@@ -198,245 +119,116 @@ function showToast(type,msg){
   el.textContent = msg;
   wrap.appendChild(el);
   requestAnimationFrame(()=>el.classList.add("show"));
-  setTimeout(()=>{
-    el.classList.remove("show");
-    setTimeout(()=>el.remove(),180);
-  },1700);
+  setTimeout(()=>{ el.classList.remove("show"); setTimeout(()=>el.remove(),180); }, 1800);
 }
-function renderAlert(){ return !alertState?'':`<div class="alert show ${alertState.type}">${esc(alertState.message)}</div>` }
-function renderAlertOnly(){
-  const slot = document.getElementById("topAlertSlot");
-  if(slot) slot.innerHTML = renderAlert();
+function showAlert(type,msg){
+  alertState = {type, message: msg};
+  renderAlertOnly();
+  showToast(type,msg);
+  setTimeout(()=>{ alertState=null; renderAlertOnly(); }, 2200);
 }
-function renderSyncBadgeOnly(){
-  document.querySelectorAll('[data-sync-badge]').forEach(el=>el.innerHTML = renderSyncBadge());
-}
-function pulseUpdatedUi(){
-  const root = document.getElementById("app");
-  if(!root) return;
-  root.classList.add("flash-update");
-  setTimeout(()=>root.classList.remove("flash-update"), 500);
-}
-function touchSession(){ lastActivityAt=nowIso() }
-function sessionExpired(){ if(!lastActivityAt) return false; return (Date.now()-new Date(lastActivityAt).getTime())>SESSION_TIMEOUT_MINUTES*60*1000 }
-function logoutAll(){ currentUserId=null; currentLocationId=null; adminLogged=false; currentView='home'; selectedArticleIds=[]; currentSessionId=null; lastActivityAt=null; render() }
-function ensureSession(){ if(sessionExpired()) logoutAll() }
+function renderAlert(){ return !alertState ? '' : `<div class="alert show ${alertState.type}">${esc(alertState.message)}</div>`; }
+function renderAlertOnly(){ const slot = document.getElementById("topAlertSlot"); if(slot) slot.innerHTML = renderAlert(); }
 
-function getUserName(id){ const u=db?.users?.find(x=>x.id===id); return u ? u.name : "-" }
-function getLocationName(id){ const l=db?.locations?.find(x=>x.id===id); return l ? l.name : "-" }
-function activeUsers(){ return db?.users?.filter(u=>u.active && u.role==='user') || [] }
-function activeLocations(){ return db?.locations?.filter(l=>l.active) || [] }
-function activeArticlesForLocation(id){ return db?.articles?.filter(a=>a.active && a.locationId===id) || [] }
-function findArticle(id){ return db?.articles?.find(a=>a.id===id) }
-function isMine(a){ return !!currentUserId && a.currentHolderUserId === currentUserId; }
+function renderTopbar(title,subtitle,extra=''){ return `<div class="top"><div><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="actions">${extra}</div></div>`; }
+function renderSyncBadge(){ return `<span class="pill sync">${syncState==='syncing'?'Sincronizzazione...':'Realtime attivo'}</span>`; }
+function renderSyncBadgeOnly(){ document.querySelectorAll('[data-sync-badge]').forEach(el=>el.innerHTML = renderSyncBadge()); }
+
+function getUserName(id){ const u=db.users.find(x=>x.id===id); return u ? u.name : '-'; }
+function getLocationName(id){ const l=db.locations.find(x=>x.id===id); return l ? l.name : '-'; }
+function activeUsers(){ return db.users.filter(u=>u.active && u.role==='user'); }
+function activeLocations(){ return db.locations.filter(l=>l.active); }
+function activeArticlesForLocation(id){ return db.articles.filter(a=>a.active && a.location_id===id); }
+function findArticle(id){ return db.articles.find(a=>a.id===id); }
+function getOwnedArticles(){ return db.articles.filter(a=>a.active && a.current_holder_user_id===currentUserId); }
+function isMine(a){ return !!currentUserId && a.current_holder_user_id===currentUserId; }
+
 function statePill(a){
   const main = a.state==='home' ? `<span class="pill home">↓ Home</span>` : `<span class="pill incarico">↑ In carico</span>`;
-  const mine = isMine(a) ? `<span class="pill mine">Lo hai tu</span>` : ``;
+  const mine = isMine(a) ? `<span class="pill mine">Lo hai tu</span>` : '';
   return main + (mine ? ` ${mine}` : '');
 }
+function movementLabel(type){ return {prelievo:'Prelievo',restituzione:'Restituzione',passaggio:'Passaggio',trasferimento:'Trasferimento'}[type] || type; }
 
-function renderOwnedListContent(){
-  const owned = getOwnedArticles();
-  return owned.length ? owned.map(a=>`<div class="owned-card"><strong>${esc(a.name)}</strong> ${a.serial?`<span class="badge">${esc(a.serial)}</span>`:''}<div class="small muted" style="margin-top:6px">Cantiere / sede: ${esc(getLocationName(a.locationId))}</div><div style="margin-top:8px">${statePill(a)}</div></div>`).join('') : `<div class="empty">Non hai oggetti in carico.</div>`;
+function setGlobalSearch(v, caret=null){ globalSearchTerm=v; focusState={id:'globalSearch', caret: caret ?? v.length}; render(); }
+function setLocationSearch(v, caret=null){ locationSearchTerm=v; focusState={id:'searchArticles', caret: caret ?? v.length}; render(); }
+function restoreFocus(){
+  if(!focusState) return;
+  const el = document.getElementById(focusState.id);
+  if(!el) return;
+  const pos = Math.min(focusState.caret ?? el.value.length, el.value.length);
+  requestAnimationFrame(()=>{ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(e){} });
 }
-function renderArticleListContent(){
-  const articles=activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
-  return filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`;
-}
-function renderAdminLogsBodyContent(){
-  return db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.timestamp)}</td><td data-label="Tipo">${esc(movementLabel(m.movementType))}</td><td data-label="Articolo">${esc(m.articleName)}</td><td data-label="Seriale">${esc(m.articleSerial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.fromLocationId))}</td><td data-label="A sede">${esc(getLocationName(m.toLocationId))}</td><td data-label="Da user">${esc(m.fromUserId?getUserName(m.fromUserId):'Home')}</td><td data-label="A user">${esc(m.toUserId?getUserName(m.toUserId):'Home')}</td><td data-label="Registrato da">${esc(m.recordedByUserId?getUserName(m.recordedByUserId):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('');
-}
-function renderGlobalResultsContent(){
-  return globalSearchTerm ? renderGlobalSearchResults() : '';
-}
-function updateLiveViews(){
-  renderSyncBadgeOnly();
-  const ownedSlot = document.getElementById('ownedListSlot');
-  if(ownedSlot) ownedSlot.innerHTML = renderOwnedListContent();
-  const articleSlot = document.getElementById('articleListSlot');
-  if(articleSlot) articleSlot.innerHTML = renderArticleListContent();
-  const logsBody = document.getElementById('adminLogsBody');
-  if(logsBody) logsBody.innerHTML = renderAdminLogsBodyContent();
-  const globalResults = document.getElementById('globalResultsSlot');
-  if(globalResults) globalResults.innerHTML = renderGlobalResultsContent();
-}
-
 function getSearchResults(q){
-  const needle=(q||"").trim().toLowerCase();
-  if(!needle || !db) return [];
+  const needle=(q||'').trim().toLowerCase();
+  if(!needle) return [];
   return db.articles.filter(a=>{
-    const holder = getUserName(a.currentHolderUserId);
-    const loc = getLocationName(a.locationId);
-    return `${a.name} ${a.category||''} ${a.serial||''} ${a.internalCode||''} ${holder} ${loc} ${a.lastNote||''}`.toLowerCase().includes(needle);
+    const holder = getUserName(a.current_holder_user_id);
+    const loc = getLocationName(a.location_id);
+    return `${a.name} ${a.category||''} ${a.serial||''} ${a.internal_code||''} ${holder} ${loc} ${a.last_note||''}`.toLowerCase().includes(needle);
   }).slice(0,50);
 }
-function getOwnedArticles(){ return db?.articles?.filter(a=>a.active && a.currentHolderUserId===currentUserId) || []; }
-
-function movementLabel(type){ return {prelievo:'Prelievo',restituzione:'Restituzione',passaggio:'Passaggio',trasferimento:'Trasferimento'}[type] || type; }
-function renderSyncBadge(){
-  const map = {
-    idle:`<span class="pill sync">Sincronizzato</span>`,
-    syncing:`<span class="pill sync">Salvataggio in corso</span>`,
-    offline:`<span class="pill offline">Offline / in coda${hasPendingSync()?' (1+)':''}</span>`,
-    error:`<span class="pill offline">Errore sync</span>`
-  };
-  return map[syncState] || map.idle;
+function filterArticlesForUI(articles){
+  const q=(locationSearchTerm||'').toLowerCase();
+  return articles.filter(a=>`${a.name} ${a.serial||''} ${a.internal_code||''} ${a.category||''}`.toLowerCase().includes(q));
 }
 
-function broadcastLocalUpdate(){
-  const payload = { type:"db-updated", sha: currentSHA, db, syncState, ts: Date.now() };
-  if(tabChannel) tabChannel.postMessage(payload);
-  localStorage.setItem(TAB_SYNC_KEY, JSON.stringify(payload));
-}
-function applyRemoteTabUpdate(payload){
-  if(!payload || payload.type!=="db-updated" || !payload.db) return;
-  if(payload.ts && payload.ts <= lastRemoteUpdateAt) return;
-  lastRemoteUpdateAt = payload.ts || Date.now();
-  db = payload.db;
-  if(payload.sha) currentSHA = payload.sha;
-  syncState = payload.syncState || (hasPendingSync() ? "offline" : "idle");
-  if(document.getElementById('app') && !document.getElementById("modal")?.classList.contains("open")){
-    updateLiveViews();
-    pulseUpdatedUi();
-  } else {
-    render();
-  }
-}
-
-async function loadFromGitHub(show=true){
-  if(!isGitHubConfigured()){
-    if(show) showAlert('error','Token GitHub mancante o configurazione incompleta.');
-    render(); return false;
-  }
-  try{
-    syncState = navigator.onLine ? "syncing" : "offline"; renderSyncBadgeOnly();
-    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}?ref=${GITHUB_BRANCH}`;
-    const res = await fetch(url,{ headers:{ Authorization:`Bearer ${GITHUB_TOKEN}`, Accept:'application/vnd.github+json' } });
-    const raw = await res.text();
-    console.log("LOAD STATUS:", res.status, raw);
-    if(!res.ok){
-      syncState = "error";
-      if(show) showAlert('error', `Errore GitHub ${res.status}. Apri la console.`);
-      render(); return false;
-    }
-    const data = JSON.parse(raw);
-    currentSHA = data.sha;
-    db = JSON.parse(base64ToUtf8((data.content||"").replace(/\\n/g,'')));
-    syncState = hasPendingSync() ? "offline" : "idle";
-    broadcastLocalUpdate();
-    if(show) showAlert('ok','Database aggiornato.');
-    render();
-    pulseUpdatedUi();
-    await syncPendingIfNeeded();
-    return true;
-  }catch(err){
-    console.error("LOAD EXCEPTION:", err);
-    syncState = navigator.onLine ? "error" : "offline";
-    if(show) showAlert('error','Errore caricamento GitHub.');
-    render();
-    return false;
-  }
-}
-
-function queueSnapshot(){
-  localStorage.setItem(QUEUE_KEY, JSON.stringify({ db, queuedAt: nowIso() }));
-  syncState = "offline";
-  broadcastLocalUpdate();
-  renderSyncBadgeOnly();
-}
-function clearQueuedSnapshot(){ localStorage.removeItem(QUEUE_KEY); }
-
-async function syncPendingIfNeeded(){
-  const pending = pendingSnapshot();
-  if(!pending || !navigator.onLine || !isGitHubConfigured()) return false;
-  db = pending.db;
-  if(!currentSHA){
-    const ok = await loadFromGitHub(false);
-    if(!ok) return false;
-  }
-  const ok = await saveJsonFile(false, true);
-  if(ok){
-    clearQueuedSnapshot();
-    syncState="idle";
-    showAlert('ok','Modifiche offline sincronizzate.');
-    updateLiveViews();
-    return true;
-  }
-  return false;
-}
-
-async function saveJsonFile(show=true, fromQueue=false){
-  if(!db){ if(show) showAlert('error','Database non caricato.'); render(); return false; }
-  if(!currentSHA){ if(show) showAlert('error','Carica prima database.json da GitHub.'); render(); return false; }
-  if(!isGitHubConfigured()){ if(show) showAlert('error','Token GitHub mancante.'); render(); return false; }
-  if(!navigator.onLine){
-    queueSnapshot();
-    if(show) showAlert('info','Sei offline: modifiche messe in coda.');
-    return false;
-  }
-  try{
-    syncState="syncing"; renderSyncBadgeOnly();
-    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}`;
-    let res = await fetch(url,{
-      method:'PUT',
-      headers:{ Authorization:`Bearer ${GITHUB_TOKEN}`, Accept:'application/vnd.github+json' },
-      body: JSON.stringify({ message:'update database', content:utf8ToBase64(JSON.stringify(db,null,2)), sha: currentSHA, branch: GITHUB_BRANCH })
-    });
-
-    if(res.status===409 || res.status===422){
-      const pendingDb = JSON.parse(JSON.stringify(db));
-      const reloadOk = await loadFromGitHub(false);
-      if(!reloadOk) throw new Error('Conflitto di versione: impossibile ricaricare il database remoto.');
-      db = pendingDb;
-      res = await fetch(url,{
-        method:'PUT',
-        headers:{ Authorization:`Bearer ${GITHUB_TOKEN}`, Accept:'application/vnd.github+json' },
-        body: JSON.stringify({ message:'update database', content:utf8ToBase64(JSON.stringify(db,null,2)), sha: currentSHA, branch: GITHUB_BRANCH })
-      });
-    }
-
-    const raw = await res.text();
-    console.log("SAVE STATUS:", res.status, raw);
-
-    if(!res.ok){
-      let detail = '';
-      try{
-        const parsed = JSON.parse(raw);
-        detail = parsed?.message || parsed?.error || raw;
-      }catch(e){
-        detail = raw;
-      }
-
-      if(res.status===401 || res.status===403){
-        throw new Error('GitHub ha rifiutato il salvataggio: token non valido, scaduto o senza permessi.');
-      }
-      if(res.status===404){
-        throw new Error('File o repository non trovato. Controlla repo, branch e database.json.');
-      }
-      if(res.status===409 || res.status===422){
-        throw new Error('Conflitto di salvataggio: il database è cambiato mentre stavi lavorando.');
-      }
-      if(detail && detail.length > 180) detail = detail.slice(0,180) + '...';
-      throw new Error(detail || `Errore GitHub ${res.status}.`);
-    }
-
-    const data = JSON.parse(raw);
-    currentSHA = data.content.sha;
-    if(fromQueue) clearQueuedSnapshot();
-    syncState = hasPendingSync() ? "offline" : "idle";
-    broadcastLocalUpdate();
-    if(show) showAlert('ok','Operazione registrata.');
-    return true;
-  }catch(err){
-    console.error("SAVE EXCEPTION:", err);
-    queueSnapshot();
-    const msg = err?.message ? `Salvataggio non riuscito: ${err.message} Modifiche messe in coda.` : 'Salvataggio non riuscito: modifiche messe in coda.';
-    if(show) showAlert('info', msg);
-    return false;
-  }finally{
-    if(syncState==="syncing") syncState="idle";
+async function fetchAllData(){
+  syncState='syncing'; renderSyncBadgeOnly();
+  const [{data:users,error:eu},{data:locations,error:el},{data:articles,error:ea},{data:movements,error:em}] = await Promise.all([
+    sb.from('users').select('*').order('name'),
+    sb.from('locations').select('*').order('name'),
+    sb.from('articles').select('*').order('name'),
+    sb.from('movements').select('*').order('created_at',{ascending:false}).limit(300)
+  ]);
+  if(eu||el||ea||em){
+    console.error({eu,el,ea,em});
+    syncState='error';
     renderSyncBadgeOnly();
+    showAlert('error','Errore caricamento dati da Supabase.');
+    return false;
   }
+  db = { users:users||[], locations:locations||[], articles:articles||[], movements:movements||[] };
+  syncState='idle';
+  renderSyncBadgeOnly();
+  return true;
+}
+
+function subscribeRealtime(){
+  if(rtChannel) return;
+  rtChannel = sb.channel('tracken-app-live')
+    .on('postgres_changes', { event:'*', schema:'public', table:'articles' }, async ()=>{ await fetchAllData(); render(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'movements' }, async ()=>{ await fetchAllData(); render(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'users' }, async ()=>{ await fetchAllData(); render(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'locations' }, async ()=>{ await fetchAllData(); render(); })
+    .subscribe((status)=>console.log('Realtime:', status));
+}
+
+async function initApp(){
+  const ok = await fetchAllData();
+  if(ok) subscribeRealtime();
+  render();
+}
+
+async function saveMovementAndArticle(article, movement, articlePatch){
+  syncState='syncing'; renderSyncBadgeOnly();
+  const { error: e1 } = await sb.from('movements').insert(movement);
+  if(e1){
+    syncState='error'; renderSyncBadgeOnly();
+    console.error(e1);
+    showAlert('error', `Errore salvataggio movimento: ${e1.message}`);
+    return false;
+  }
+  const { error: e2 } = await sb.from('articles').update(articlePatch).eq('id', article.id);
+  if(e2){
+    syncState='error'; renderSyncBadgeOnly();
+    console.error(e2);
+    showAlert('error', `Movimento salvato ma stato articolo non aggiornato: ${e2.message}`);
+    return false;
+  }
+  await fetchAllData();
+  render();
+  return true;
 }
 
 async function compressImageFile(file, maxSide=1200, quality=0.7){
@@ -469,92 +261,42 @@ async function handleMovementImageChange(e){
   if(p) p.innerHTML = `<img class="preview-img" src="${data}" alt="preview">`;
 }
 
-function renderTopbar(title,subtitle,extra=''){ return `<div class="top"><div><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="actions">${extra}</div></div>` }
-function restoreFocus(){
-  if(!focusState) return;
-  const el = document.getElementById(focusState.id);
-  if(!el) return;
-  const pos = Math.min(focusState.caret ?? el.value.length, el.value.length);
-  requestAnimationFrame(() => {
-    el.focus();
-    try{ el.setSelectionRange(pos, pos); }catch(e){}
-  });
+function renderGlobalSearchBox(){
+  return `<label class="grow">Cerca oggetto, seriale, utente o cantiere<input id="globalSearch" placeholder="Es. trapano, SN7781, Recco..." value="${esc(globalSearchTerm)}" oninput="setGlobalSearch(this.value, this.selectionStart)"></label>`;
 }
-
 function renderGlobalSearchResults(){
   const items = getSearchResults(globalSearchTerm);
   return `<div class="result-list" style="margin-top:12px">${items.length ? items.map(a=>`
     <button class="result-card" type="button" onclick="openHistory('${a.id}')" style="text-align:left; width:100%;">
       <strong>${esc(a.name)}</strong> ${a.serial?`<span class="badge">${esc(a.serial)}</span>`:''}
-      <div class="small muted" style="margin-top:6px">Sede: ${esc(getLocationName(a.locationId))} • Possessore: ${esc(a.currentHolderUserId?getUserName(a.currentHolderUserId):'Home')}</div>
+      <div class="small muted" style="margin-top:6px">Sede: ${esc(getLocationName(a.location_id))} • Possessore: ${esc(a.current_holder_user_id?getUserName(a.current_holder_user_id):'Home')}</div>
       <div style="margin-top:8px">${statePill(a)}</div>
-      <div class="small muted" style="margin-top:8px">Ultimo movimento: ${formatDate(a.lastMovementAt)}</div>
+      <div class="small muted" style="margin-top:8px">Ultimo movimento: ${formatDate(a.last_movement_at)}</div>
       <div class="small" style="margin-top:8px;color:#1d4ed8;font-weight:700">Apri storico movimentazioni</div>
     </button>`).join('') : `<div class="empty">Nessun risultato.</div>`}</div>`;
 }
-function renderGlobalSearchBox(){
-  return `<label class="grow">Cerca oggetto, seriale, utente o cantiere<input id="globalSearch" placeholder="Es. trapano, SN7781, Recco..." value="${esc(globalSearchTerm)}" oninput="setGlobalSearch(this.value, this.selectionStart)"></label>`;
-}
-function setGlobalSearch(v, caret=null){
-  globalSearchTerm = v;
-  focusState = { id:'globalSearch', caret: caret ?? v.length };
-  render();
-}
-function setLocationSearch(v, caret=null){
-  locationSearchTerm = v;
-  focusState = { id:'searchArticles', caret: caret ?? v.length };
-  render();
-}
 
-function render(){
-  ensureSession();
-  if(!hasToken()){ renderTokenSetup(); return; }
-  const app=$('#app');
-  if(!db){
-    app.innerHTML = `<div class="panel"><div id="topAlertSlot">${renderAlert()}</div>${renderTopbar('Tracken - GitHub','Collega l’app al database online', `<span data-sync-badge>${renderSyncBadge()}</span> <button onclick="resetToken()">Cambia token</button>`)}<div class="actions"><button class="primary" onclick="loadFromGitHub()">Carica database da GitHub</button></div><p class="small muted" style="margin-top:12px">Dopo il primo caricamento, lettura e salvataggio saranno automatici.</p></div>`;
-    restoreFocus();
-    return;
-  }
-
-  const searchBox = renderGlobalSearchBox();
-  const results = globalSearchTerm ? renderGlobalSearchResults() : '';
-
-  if(adminLogged){
-    const body = currentView==='admin_users' ? renderAdminUsers()
-      : currentView==='admin_locations' ? renderAdminLocations()
-      : currentView==='admin_articles' ? renderAdminArticles()
-      : currentView==='admin_logs' ? renderAdminLogs()
-      : renderAdminDashboard();
-    app.innerHTML = `<div class="layout">${renderAdminSidebar()}<div><div id="topAlertSlot">${renderAlert()}</div><div class="panel" style="margin-bottom:12px">${renderTopbar('Ricerca globale','Admin e operatori possono localizzare rapidamente un articolo', renderSyncBadge())}${searchBox}<div id="globalResultsSlot">${results}</div></div>${body}</div></div>`;
-    restoreFocus();
-    return;
-  }
-
-  if(!currentUserId){
-    app.innerHTML = `<div id="topAlertSlot">${renderAlert()}</div>${renderHome(searchBox, results)}`;
-    restoreFocus();
-    return;
-  }
-  if(!currentLocationId){
-    app.innerHTML = `<div id="topAlertSlot">${renderAlert()}</div>${renderUserLanding(searchBox, results)}`;
-    restoreFocus();
-    return;
-  }
-  app.innerHTML = `<div id="topAlertSlot">${renderAlert()}</div>${renderUserArticles(searchBox, results)}${renderStickyActions()}`;
-  restoreFocus();
+function renderArticleRow(a){
+  const selected=selectedArticleIds.includes(a.id);
+  return `<div class="article ${selected?'selected':''}">
+    <input type="checkbox" ${selected?'checked':''} onchange="toggleArticle('${a.id}')">
+    <div><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')} ${a.serial?'• '+esc(a.serial):''}</div></div>
+    <div><div class="small muted">Stato</div>${statePill(a)}</div>
+    <div><div class="small muted">Possessore</div>${esc(a.current_holder_user_id?getUserName(a.current_holder_user_id):'Home')}</div>
+    <div><div class="small muted">Ultimo user</div>${esc(a.last_known_user_id?getUserName(a.last_known_user_id):'-')}</div>
+    <div class="actions"><button onclick="openHistory('${a.id}')">Storico</button></div>
+  </div>`;
 }
 
 function renderHome(searchBox, results){
   return `<div class="panel">
-    ${renderTopbar('Tracken - GitHub','Lettura e salvataggio automatici attivi', `<span data-sync-badge>${renderSyncBadge()}</span> <button onclick="resetToken()">Cambia token</button>`)}
+    <div id="topAlertSlot">${renderAlert()}</div>
+    ${renderTopbar('Tracken - Supabase','Lettura e salvataggio realtime attivi', `<span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="grid g2">
       <div class="panel" style="margin:0">
         <h3>Login admin</h3>
-        <div class="grid g2">
-          <label>Username<input id="adminUser" value="admin"></label>
-          <label>Password<input id="adminPass" type="password" value="admin123"></label>
-        </div>
+        <div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" value="admin123"></label></div>
         <div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div>
       </div>
       <div class="panel" style="margin:0">
@@ -566,55 +308,32 @@ function renderHome(searchBox, results){
 }
 
 function renderUserLanding(searchBox, results){
-  const owned = getOwnedArticles();
   return `<div class="panel">
+    <div id="topAlertSlot">${renderAlert()}</div>
     ${renderTopbar('Benvenuto','Seleziona un cantiere oppure controlla cosa hai già in carico', `<button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="panel" style="margin-bottom:12px">
       <h3>Recap oggetti in carico a te</h3>
-      <div id="ownedListSlot" class="owned-list">
-      ${renderOwnedListContent()}
-      </div>
+      <div class="owned-list">${getOwnedArticles().length ? getOwnedArticles().map(a=>`<div class="owned-card"><strong>${esc(a.name)}</strong> ${a.serial?`<span class="badge">${esc(a.serial)}</span>`:''}<div class="small muted" style="margin-top:6px">Cantiere / sede: ${esc(getLocationName(a.location_id))}</div><div style="margin-top:8px">${statePill(a)}</div></div>`).join('') : `<div class="empty">Non hai oggetti in carico.</div>`}</div>
     </div>
     <div class="panel">
       <h3>Selezione sede</h3>
-      <div class="tilegrid">
-        ${activeLocations().map(l=>`<button class="tile" onclick="selectLocation('${l.id}')"><strong>${esc(l.name)}</strong><div style="margin-top:6px"><span class="pill ${l.type}">${esc(l.type)}</span></div></button>`).join('')}
-      </div>
+      <div class="tilegrid">${activeLocations().map(l=>`<button class="tile" onclick="selectLocation('${l.id}')"><strong>${esc(l.name)}</strong><div style="margin-top:6px"><span class="pill ${l.type}">${esc(l.type)}</span></div></button>`).join('')}</div>
     </div>
   </div>`;
 }
-function selectLocation(id){ currentLocationId=id; selectedArticleIds=[]; locationSearchTerm=""; touchSession(); render(); }
 
 function renderUserArticles(searchBox, results){
   const articles=activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
   return `<div class="panel">
+    <div id="topAlertSlot">${renderAlert()}</div>
     ${renderTopbar(getLocationName(currentLocationId),'Seleziona uno o più articoli', `<button onclick="currentLocationId=null;selectedArticleIds=[];locationSearchTerm='';render()">Cambia sede</button><button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
-    <div class="actions" style="margin-bottom:12px">
-      <label class="grow">Ricerca nel cantiere<input id="searchArticles" placeholder="Nome, codice o seriale" value="${esc(locationSearchTerm)}" oninput="setLocationSearch(this.value, this.selectionStart)"></label>
-    </div>
-    <div id="articleListSlot" class="article-list">
-      ${renderArticleListContent()}
-    </div>
+    <div class="actions" style="margin-bottom:12px"><label class="grow">Ricerca nel cantiere<input id="searchArticles" placeholder="Nome, codice o seriale" value="${esc(locationSearchTerm)}" oninput="setLocationSearch(this.value, this.selectionStart)"></label></div>
+    <div class="article-list">${filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`}</div>
   </div>`;
 }
-function filterArticlesForUI(articles){
-  const q=(locationSearchTerm || "").toLowerCase();
-  return articles.filter(a=>`${a.name} ${a.serial||''} ${a.internalCode||''} ${a.category||''}`.toLowerCase().includes(q));
-}
-function toggleArticle(id){ const idx=selectedArticleIds.indexOf(id); if(idx>=0) selectedArticleIds.splice(idx,1); else selectedArticleIds.push(id); render(); }
-function renderArticleRow(a){
-  const selected=selectedArticleIds.includes(a.id);
-  return `<div class="article ${selected?'selected':''}">
-    <input type="checkbox" ${selected?'checked':''} onchange="toggleArticle('${a.id}')">
-    <div><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')} ${a.serial?'• '+esc(a.serial):''}</div></div>
-    <div><div class="small muted">Stato</div>${statePill(a)}</div>
-    <div><div class="small muted">Possessore</div>${esc(a.currentHolderUserId?getUserName(a.currentHolderUserId):'Home')}</div>
-    <div><div class="small muted">Ultimo user</div>${esc(a.lastKnownUserId?getUserName(a.lastKnownUserId):'-')}</div>
-    <div class="actions"><button onclick="openHistory('${a.id}')">Storico</button></div>
-  </div>`;
-}
+
 function renderStickyActions(){
   return `<div class="sticky-bar"><div class="actions">
     <button class="primary" onclick="openMovementModal('prelievo')">↑ Preleva</button>
@@ -623,6 +342,159 @@ function renderStickyActions(){
     <button class="soft" onclick="openMovementModal('trasferimento')">→ Trasferisci</button>
   </div></div>`;
 }
+
+function renderAdminSidebar(){
+  return `<div class="sidebar">
+    <h3>Area admin</h3>
+    <div class="nav">
+      <button class="${currentView==='admin_dashboard'?'active':''}" onclick="setAdminView('admin_dashboard')">Dashboard</button>
+      <button class="${currentView==='admin_users'?'active':''}" onclick="setAdminView('admin_users')">Utenti</button>
+      <button class="${currentView==='admin_locations'?'active':''}" onclick="setAdminView('admin_locations')">Cantieri / sedi</button>
+      <button class="${currentView==='admin_articles'?'active':''}" onclick="setAdminView('admin_articles')">Attrezzature</button>
+      <button class="${currentView==='admin_logs'?'active':''}" onclick="setAdminView('admin_logs')">Storico globale</button>
+    </div>
+    <div class="actions" style="margin-top:14px"><button onclick="logoutAll()">Esci</button></div>
+  </div>`;
+}
+
+function renderAdminDashboard(){
+  const total=db.articles.filter(a=>a.active).length, home=db.articles.filter(a=>a.active&&a.state==='home').length, inUse=db.articles.filter(a=>a.active&&a.state==='in_carico').length, locs=db.locations.filter(l=>l.active).length;
+  return `<div class="panel">
+    <div id="topAlertSlot">${renderAlert()}</div>
+    ${renderTopbar('Dashboard amministrativa','Gestione centralizzata', `<span data-sync-badge>${renderSyncBadge()}</span>`)}
+    <div class="stats">
+      <div class="stat"><div class="muted">Attrezzature attive</div><div class="value">${total}</div></div>
+      <div class="stat"><div class="muted">Disponibili in home</div><div class="value">${home}</div></div>
+      <div class="stat"><div class="muted">In carico</div><div class="value">${inUse}</div></div>
+      <div class="stat"><div class="muted">Sedi attive</div><div class="value">${locs}</div></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>Export PDF elenco materiale</h3>
+    <div class="grid g2">
+      <label>Cantiere / sede<select id="pdfLocation">${db.locations.map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>
+      <label>&nbsp;<button class="primary" onclick="exportLocationPdf()">Esporta PDF</button></label>
+    </div>
+  </div>`;
+}
+
+function renderAdminUsers(){
+  return `<div class="panel">
+    <div id="topAlertSlot">${renderAlert()}</div>
+    ${renderTopbar('Utenti','Crea, modifica e cancella')}
+    <div class="grid g4">
+      <label>Nome<input id="newUserName" placeholder="Es. Marco Neri"></label>
+      <label>PIN<input id="newUserPin" placeholder="4 cifre"></label>
+      <label>Ruolo<select id="newUserRole"><option value="user">User</option><option value="admin">Admin</option></select></label>
+      <label>&nbsp;<button class="primary" onclick="createUser()">Crea utente</button></label>
+    </div>
+  </div>
+  <div class="panel"><table><thead><tr><th>Nome</th><th>Ruolo</th><th>Azioni</th></tr></thead><tbody>
+      ${db.users.map(u=>`<tr><td data-label="Nome">${esc(u.name)}</td><td data-label="Ruolo">${esc(u.role)}</td><td data-label="Azioni" class="actions"><button onclick="resetPin('${u.id}')">Reset PIN</button><button class="danger" onclick="deleteUser('${u.id}')">Cancella</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+function renderAdminLocations(){
+  return `<div class="panel">
+    <div id="topAlertSlot">${renderAlert()}</div>
+    ${renderTopbar('Cantieri / sedi','Crea e cancella')}
+    <div class="grid g4">
+      <label>Nome<input id="newLocName" placeholder="Es. Cantiere Chiavari"></label>
+      <label>Tipo<select id="newLocType"><option value="cantiere">Cantiere</option><option value="magazzino">Magazzino</option></select></label>
+      <label>Note<input id="newLocNotes" placeholder="Facoltative"></label>
+      <label>&nbsp;<button class="primary" onclick="createLocation()">Crea sede</button></label>
+    </div>
+  </div>
+  <div class="panel"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Azioni</th></tr></thead><tbody>
+      ${db.locations.map(l=>`<tr><td data-label="Nome">${esc(l.name)}</td><td data-label="Tipo">${esc(l.type)}</td><td data-label="Azioni" class="actions"><button class="danger" onclick="deleteLocation('${l.id}')">Cancella</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+function renderAdminArticles(){
+  return `<div class="panel">
+    <div id="topAlertSlot">${renderAlert()}</div>
+    ${renderTopbar('Attrezzature','Crea e cancella')}
+    <div class="grid g4">
+      <label>Nome<input id="newArtName" placeholder="Es. Trapano Bosch"></label>
+      <label>Categoria<input id="newArtCategory" placeholder="Es. Trapani"></label>
+      <label>Codice interno<input id="newArtCode" placeholder="Es. TRP-009"></label>
+      <label>Seriale<input id="newArtSerial" placeholder="Facoltativo"></label>
+      <label>Sede iniziale<select id="newArtLoc">${activeLocations().map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>
+      <label>Stato iniziale<select id="newArtState"><option value="home">Home</option><option value="in_carico">In carico</option></select></label>
+      <label>Possessore iniziale<select id="newArtUser"><option value="">Nessuno</option>${activeUsers().map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></label>
+      <label>&nbsp;<button class="primary" onclick="createArticle()">Crea articolo</button></label>
+    </div>
+  </div>
+  <div class="panel"><table><thead><tr><th>Articolo</th><th>Seriale/Codice</th><th>Sede</th><th>Stato</th><th>Possessore</th><th>Azioni</th></tr></thead><tbody>
+      ${db.articles.filter(a=>a.active).map(a=>`<tr><td data-label="Articolo"><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')}</div></td><td data-label="Seriale/Codice">${esc(a.serial || a.internal_code || '-')}</td><td data-label="Sede">${esc(getLocationName(a.location_id))}</td><td data-label="Stato">${statePill(a)}</td><td data-label="Possessore">${esc(a.current_holder_user_id ? getUserName(a.current_holder_user_id) : 'Home')}</td><td data-label="Azioni" class="actions"><button onclick="openHistory('${a.id}')">Storico</button><button class="danger" onclick="deleteArticle('${a.id}')">Cancella</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+function renderAdminLogs(){
+  return `<div class="panel">
+    <div id="topAlertSlot">${renderAlert()}</div>
+    ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
+    <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>
+      ${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.created_at)}</td><td data-label="Tipo">${esc(movementLabel(m.movement_type))}</td><td data-label="Articolo">${esc(m.article_name)}</td><td data-label="Seriale">${esc(m.article_serial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.from_location_id))}</td><td data-label="A sede">${esc(getLocationName(m.to_location_id))}</td><td data-label="Da user">${esc(m.from_user_id?getUserName(m.from_user_id):'Home')}</td><td data-label="A user">${esc(m.to_user_id?getUserName(m.to_user_id):'Home')}</td><td data-label="Registrato da">${esc(m.recorded_by_user_id?getUserName(m.recorded_by_user_id):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('')}
+    </tbody></table>
+  </div>`;
+}
+
+function render(){
+  ensureSession();
+  const searchBox = renderGlobalSearchBox();
+  const results = globalSearchTerm ? renderGlobalSearchResults() : '';
+  const app=$('#app');
+
+  if(adminLogged){
+    const body = currentView==='admin_users' ? renderAdminUsers()
+      : currentView==='admin_locations' ? renderAdminLocations()
+      : currentView==='admin_articles' ? renderAdminArticles()
+      : currentView==='admin_logs' ? renderAdminLogs()
+      : renderAdminDashboard();
+    app.innerHTML = `<div class="layout">${renderAdminSidebar()}<div><div class="panel" style="margin-bottom:12px">${renderTopbar('Ricerca globale','Admin e operatori possono localizzare rapidamente un articolo', `<span data-sync-badge>${renderSyncBadge()}</span>`)}${searchBox}<div id="globalResultsSlot">${results}</div></div>${body}</div></div>`;
+    restoreFocus();
+    return;
+  }
+  if(!currentUserId){
+    app.innerHTML = renderHome(searchBox, results);
+    restoreFocus();
+    return;
+  }
+  if(!currentLocationId){
+    app.innerHTML = renderUserLanding(searchBox, results);
+    restoreFocus();
+    return;
+  }
+  app.innerHTML = `${renderUserArticles(searchBox, results)}${renderStickyActions()}`;
+  restoreFocus();
+}
+
+function adminLogin(){
+  const u=$('#adminUser').value.trim(), p=$('#adminPass').value;
+  if(u!==ADMIN_USER || p!==ADMIN_PASSWORD){ showAlert('error','Credenziali admin non valide.'); return; }
+  adminLogged=true; currentView='admin_dashboard'; currentSessionId=uid(); touchSession(); render();
+}
+function setAdminView(view){ currentView=view; render(); }
+function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
+function closeModal(){ $('#modal').classList.remove('open'); }
+$('#modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeModal(); });
+
+function openPinModal(userId){
+  const user=db.users.find(u=>u.id===userId);
+  openModal(`<h3>Accesso utente</h3><p>Hai selezionato <strong>${esc(user.name)}</strong>. Inserisci il PIN.</p>
+    <label>PIN<input id="pinInput" type="password" maxlength="8"></label>
+    <div class="pinpad">${[1,2,3,4,5,6,7,8,9,'C',0,'←'].map(k=>`<button onclick="pinKey('${k}')">${k}</button>`).join('')}</div>
+    <div class="modal-actions"><button onclick="closeModal()">Annulla</button><button class="primary" onclick="userLogin('${userId}')">Entra</button></div>`);
+}
+function pinKey(k){ const i=$('#pinInput'); if(!i) return; if(k==='C') i.value=''; else if(k==='←') i.value=i.value.slice(0,-1); else i.value += k; }
+function userLogin(userId){
+  const pin=$('#pinInput').value, user=db.users.find(u=>u.id===userId);
+  if(user.pin_hash !== hashPin(pin)){ showAlert('error','PIN non valido.'); closeModal(); return; }
+  currentUserId=userId; currentLocationId=null; currentSessionId=uid(); touchSession(); closeModal(); render();
+}
+function selectLocation(id){ currentLocationId=id; selectedArticleIds=[]; locationSearchTerm=''; render(); }
+function toggleArticle(id){ const idx=selectedArticleIds.indexOf(id); if(idx>=0) selectedArticleIds.splice(idx,1); else selectedArticleIds.push(id); render(); }
 
 function openMovementModal(type){
   if(!selectedArticleIds.length){ showAlert('error','Seleziona almeno un articolo.'); return; }
@@ -638,9 +510,7 @@ function openMovementModal(type){
     <ul>${selected.map(a=>`<li>${esc(a.name)} ${a.serial?`(${esc(a.serial)})`:''}</li>`).join('')}</ul>
     ${extra}
     <label>Nota<textarea id="movementNote" placeholder="Nota facoltativa"></textarea></label>
-    <label>Immagine (facoltativa, compressa automaticamente)
-      <input type="file" accept="image/*" onchange="handleMovementImageChange(event)">
-    </label>
+    <label>Immagine (facoltativa, compressa automaticamente)<input type="file" accept="image/*" onchange="handleMovementImageChange(event)"></label>
     <div id="imgPreviewWrap"></div>
     <div class="modal-actions"><button onclick="closeModal()">Annulla</button><button class="primary" onclick="confirmMovement('${type}')">Conferma</button></div>
   `);
@@ -650,265 +520,145 @@ async function confirmMovement(type){
   const note=$('#movementNote').value.trim(), targetUser=$('#targetUser')?.value||null, targetLocation=$('#targetLocation')?.value||null, articles=selectedArticleIds.map(findArticle).filter(Boolean);
   if(type==='passaggio'&&!targetUser){ showAlert('error','Seleziona il collega destinatario.'); closeModal(); return; }
   if(type==='trasferimento'&&!targetLocation){ showAlert('error','Seleziona la sede di destinazione.'); closeModal(); return; }
+
   for(const a of articles){
     if(type==='prelievo' && a.state!=='home'){ showAlert('error',`Prelievo non consentito: ${a.name} non è disponibile in home.`); closeModal(); return; }
     if(type==='restituzione' && a.state!=='in_carico'){ showAlert('error',`Restituzione non consentita: ${a.name} risulta già in home.`); closeModal(); return; }
     if(type==='passaggio' && a.state!=='in_carico'){ showAlert('error',`Passaggio non consentito: ${a.name} deve essere prima preso in carico.`); closeModal(); return; }
     if(type==='trasferimento' && a.state!=='home'){ showAlert('error',`Trasferimento non consentito: ${a.name} non è in home. Solo gli articoli in home possono essere spostati tra i cantieri.`); closeModal(); return; }
   }
+
   for(const a of articles){
     const movement = {
-      id:uid('mov'), timestamp:nowIso(), movementType:type, articleId:a.id, articleName:a.name, articleSerial:a.serial||'',
-      fromLocationId:a.locationId,
-      toLocationId:type==='trasferimento' ? targetLocation : a.locationId,
-      fromUserId:type==='prelievo' ? null : a.currentHolderUserId,
-      toUserId:type==='prelievo' ? currentUserId : type==='passaggio' ? targetUser : null,
-      recordedByUserId:currentUserId, note:note||'', imageData:modalImageData||null, sessionId: currentSessionId || uid('sess')
+      article_id: a.id,
+      article_name: a.name,
+      article_serial: a.serial || '',
+      movement_type: type,
+      from_location_id: a.location_id,
+      to_location_id: type==='trasferimento' ? targetLocation : a.location_id,
+      from_user_id: type==='prelievo' ? null : a.current_holder_user_id,
+      to_user_id: type==='prelievo' ? currentUserId : type==='passaggio' ? targetUser : null,
+      recorded_by_user_id: currentUserId,
+      note: note || '',
+      image_data: modalImageData || null,
+      session_id: currentSessionId || ''
     };
-    db.movements.unshift(movement);
-    if(type==='prelievo'){ a.state='in_carico'; a.currentHolderUserId=currentUserId; a.lastKnownUserId=currentUserId; }
-    if(type==='restituzione'){ a.state='home'; a.currentHolderUserId=null; }
-    if(type==='passaggio'){ a.state='in_carico'; a.currentHolderUserId=targetUser; a.lastKnownUserId=targetUser; }
-    if(type==='trasferimento'){ a.locationId=targetLocation; a.state='home'; a.currentHolderUserId=null; }
-    a.lastMovementAt=movement.timestamp; a.lastNote=note||'';
+    let patch = {};
+    if(type==='prelievo') patch = { state:'in_carico', current_holder_user_id:currentUserId, last_known_user_id:currentUserId, last_movement_at:nowIso(), last_note:note||'' };
+    if(type==='restituzione') patch = { state:'home', current_holder_user_id:null, last_movement_at:nowIso(), last_note:note||'' };
+    if(type==='passaggio') patch = { state:'in_carico', current_holder_user_id:targetUser, last_known_user_id:targetUser, last_movement_at:nowIso(), last_note:note||'' };
+    if(type==='trasferimento') patch = { location_id:targetLocation, state:'home', current_holder_user_id:null, last_movement_at:nowIso(), last_note:note||'' };
+    const ok = await saveMovementAndArticle(a, movement, patch);
+    if(!ok){ closeModal(); return; }
   }
-  selectedArticleIds=[]; closeModal(); await saveJsonFile(); showAlert('ok', `${movementLabel(type)} completato con successo.`); updateLiveViews();
+  selectedArticleIds=[]; closeModal(); showAlert('ok', `${movementLabel(type)} completato con successo.`); render();
 }
 
 function openHistory(articleId){
-  const article=findArticle(articleId), logs=db.movements.filter(m=>m.articleId===articleId);
+  const article=findArticle(articleId), logs=db.movements.filter(m=>m.article_id===articleId);
   openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?`• ${esc(article.serial)}`:''}</p>
     ${logs.length ? `<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th><th>Img</th></tr></thead><tbody>
       ${logs.map(log=>`<tr>
-        <td data-label="Data">${formatDate(log.timestamp)}</td>
-        <td data-label="Tipo">${esc(movementLabel(log.movementType))}</td>
-        <td data-label="Da sede">${esc(getLocationName(log.fromLocationId))}</td>
-        <td data-label="A sede">${esc(getLocationName(log.toLocationId))}</td>
-        <td data-label="Da">${esc(log.fromUserId?getUserName(log.fromUserId):'Home')}</td>
-        <td data-label="A">${esc(log.toUserId?getUserName(log.toUserId):'Home')}</td>
-        <td data-label="Registrato da">${esc(log.recordedByUserId?getUserName(log.recordedByUserId):'-')}</td>
+        <td data-label="Data">${formatDate(log.created_at)}</td>
+        <td data-label="Tipo">${esc(movementLabel(log.movement_type))}</td>
+        <td data-label="Da sede">${esc(getLocationName(log.from_location_id))}</td>
+        <td data-label="A sede">${esc(getLocationName(log.to_location_id))}</td>
+        <td data-label="Da">${esc(log.from_user_id?getUserName(log.from_user_id):'Home')}</td>
+        <td data-label="A">${esc(log.to_user_id?getUserName(log.to_user_id):'Home')}</td>
+        <td data-label="Registrato da">${esc(log.recorded_by_user_id?getUserName(log.recorded_by_user_id):'-')}</td>
         <td data-label="Nota">${esc(log.note||'-')}</td>
-        <td data-label="Img">${log.imageData ? `<img src="${log.imageData}" class="preview-img" style="max-width:120px">` : '-'}</td>
+        <td data-label="Img">${log.image_data ? `<img src="${log.image_data}" class="preview-img" style="max-width:120px">` : '-'}</td>
       </tr>`).join('')}
     </tbody></table>` : `<div class="empty">Nessun movimento registrato.</div>`}
     <div class="modal-actions"><button class="primary" onclick="closeModal()">Chiudi</button></div>`);
 }
 
-function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
-function closeModal(){ $('#modal').classList.remove('open'); }
-$('#modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeModal(); });
-
-function adminLogin(){
-  const u=$('#adminUser').value.trim(), p=$('#adminPass').value;
-  if(u!==ADMIN_USER || p!==ADMIN_PASSWORD){ showAlert('error','Credenziali admin non valide.'); return; }
-  adminLogged=true; currentView='admin_dashboard'; currentSessionId=uid('sess'); touchSession(); render();
-}
-function openPinModal(userId){
-  const user=db.users.find(u=>u.id===userId);
-  openModal(`<h3>Accesso utente</h3><p>Hai selezionato <strong>${esc(user.name)}</strong>. Inserisci il PIN.</p>
-    <label>PIN<input id="pinInput" type="password" maxlength="8"></label>
-    <div class="pinpad">${[1,2,3,4,5,6,7,8,9,'C',0,'←'].map(k=>`<button onclick="pinKey('${k}')">${k}</button>`).join('')}</div>
-    <div class="modal-actions"><button onclick="closeModal()">Annulla</button><button class="primary" onclick="userLogin('${userId}')">Entra</button></div>`);
-}
-function pinKey(k){ const i=$('#pinInput'); if(!i) return; if(k==='C') i.value=''; else if(k==='←') i.value=i.value.slice(0,-1); else i.value += k; }
-function userLogin(userId){
-  const pin=$('#pinInput').value, user=db.users.find(u=>u.id===userId);
-  if(user.pinHash !== hashPin(pin)){ showAlert('error','PIN non valido.'); closeModal(); return; }
-  currentUserId=userId; currentLocationId=null; currentSessionId=uid('sess'); touchSession(); closeModal(); render();
-}
-
-function renderAdminSidebar(){
-  return `<div class="sidebar">
-    <h3>Area admin</h3>
-    <div class="nav">
-      <button class="${currentView==='admin_dashboard'?'active':''}" onclick="setAdminView('admin_dashboard')">Dashboard</button>
-      <button class="${currentView==='admin_users'?'active':''}" onclick="setAdminView('admin_users')">Utenti</button>
-      <button class="${currentView==='admin_locations'?'active':''}" onclick="setAdminView('admin_locations')">Cantieri / sedi</button>
-      <button class="${currentView==='admin_articles'?'active':''}" onclick="setAdminView('admin_articles')">Attrezzature</button>
-      <button class="${currentView==='admin_logs'?'active':''}" onclick="setAdminView('admin_logs')">Storico globale</button>
-    </div>
-    <div class="actions" style="margin-top:14px"><button onclick="logoutAll()">Esci</button><button onclick="resetToken()">Cambia token</button></div>
-  </div>`;
-}
-function setAdminView(view){ currentView=view; render(); }
-
-function renderAdminDashboard(){
-  const total=db.articles.filter(a=>a.active).length, home=db.articles.filter(a=>a.active&&a.state==='home').length, inUse=db.articles.filter(a=>a.active&&a.state==='in_carico').length, locs=db.locations.filter(l=>l.active).length;
-  return `<div class="panel">
-    ${renderTopbar('Dashboard amministrativa','Gestione centralizzata', renderSyncBadge())}
-    <div class="stats">
-      <div class="stat"><div class="muted">Attrezzature attive</div><div class="value">${total}</div></div>
-      <div class="stat"><div class="muted">Disponibili in home</div><div class="value">${home}</div></div>
-      <div class="stat"><div class="muted">In carico</div><div class="value">${inUse}</div></div>
-      <div class="stat"><div class="muted">Sedi attive</div><div class="value">${locs}</div></div>
-    </div>
-  </div>
-  <div class="panel">
-    <h3>Export PDF elenco materiale</h3>
-    <div class="grid g2">
-      <label>Cantiere / sede<select id="pdfLocation">${db.locations.map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>
-      <label>&nbsp;<button class="primary" onclick="exportLocationPdf()">Esporta PDF</button></label>
-    </div>
-    <p class="small muted">Apre una vista di stampa ottimizzata da salvare in PDF.</p>
-  </div>`;
-}
-function exportLocationPdf(){
-  const locationId = document.getElementById('pdfLocation').value;
-  const location = db.locations.find(l=>l.id===locationId);
-  const articles = db.articles.filter(a=>a.locationId===locationId && a.active);
-  const w = window.open('', '_blank');
-  w.document.write(`<!DOCTYPE html><html><head><title>Elenco materiale - ${esc(location.name)}</title>
-  <style>body{font-family:Arial;padding:20px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #ccc;padding:8px;text-align:left} h1{margin:0 0 10px 0} .m{color:#555}</style>
-  </head><body>
-  <h1>Elenco materiale - ${esc(location.name)}</h1>
-  <div class="m">Data export: ${new Date().toLocaleString('it-IT')}</div>
-  <table><thead><tr><th>Articolo</th><th>Categoria</th><th>Codice/Seriale</th><th>Stato</th><th>Possessore</th><th>Ultimo movimento</th></tr></thead><tbody>
-  ${articles.map(a=>`<tr><td>${esc(a.name)}</td><td>${esc(a.category||'-')}</td><td>${esc(a.serial||a.internalCode||'-')}</td><td>${a.state==='home'?'Home':'In carico'}</td><td>${esc(a.currentHolderUserId?getUserName(a.currentHolderUserId):'Home')}</td><td>${formatDate(a.lastMovementAt)}</td></tr>`).join('')}
-  </tbody></table></body></html>`);
-  w.document.close(); w.focus(); w.print();
-}
-
-function renderAdminUsers(){
-  return `<div class="panel">
-    ${renderTopbar('Utenti','Crea, modifica e cancella')}
-    <div class="grid g4">
-      <label>Nome<input id="newUserName" placeholder="Es. Marco Neri"></label>
-      <label>PIN<input id="newUserPin" placeholder="4 cifre"></label>
-      <label>Ruolo<select id="newUserRole"><option value="user">User</option><option value="admin">Admin</option></select></label>
-      <label>&nbsp;<button class="primary" onclick="createUser()">Crea utente</button></label>
-    </div>
-  </div>
-  <div class="panel">
-    <table><thead><tr><th>Nome</th><th>Ruolo</th><th>Azioni</th></tr></thead><tbody>
-      ${db.users.map(u=>`<tr><td data-label="Nome">${esc(u.name)}</td><td data-label="Ruolo">${esc(u.role)}</td><td data-label="Azioni" class="actions"><button onclick="resetPin('${u.id}')">Reset PIN</button><button class="danger" onclick="deleteUser('${u.id}')">Cancella</button></td></tr>`).join('')}
-    </tbody></table>
-  </div>`;
-}
 async function createUser(){
   const name=$('#newUserName').value.trim(), pin=$('#newUserPin').value.trim(), role=$('#newUserRole').value;
   if(!name || !pin){ showAlert('error','Inserisci nome e PIN.'); return; }
-  db.users.push({id:uid('u'), name, pinHash:hashPin(pin), role, active:true, createdAt:nowIso()});
-  await saveJsonFile(); render();
+  const { error } = await sb.from('users').insert({ name, pin_hash:hashPin(pin), role, active:true });
+  if(error) return showAlert('error', error.message);
+  await fetchAllData(); render(); showAlert('ok','Utente creato.');
 }
 async function resetPin(id){
   const pin=prompt('Nuovo PIN:'); if(!pin) return;
-  const u=db.users.find(x=>x.id===id); u.pinHash=hashPin(pin); await saveJsonFile(); render();
+  const { error } = await sb.from('users').update({ pin_hash:hashPin(pin) }).eq('id', id);
+  if(error) return showAlert('error', error.message);
+  await fetchAllData(); render(); showAlert('ok','PIN aggiornato.');
 }
 async function deleteUser(id){
   if(!confirm("ATTENZIONE: cancelli definitivamente l'utente?")) return;
-  db.articles.forEach(a=>{ if(a.currentHolderUserId===id) a.currentHolderUserId=null; if(a.lastKnownUserId===id) a.lastKnownUserId=null; });
-  db.users = db.users.filter(u=>u.id!==id);
-  await saveJsonFile(); render();
-}
-
-function renderAdminLocations(){
-  return `<div class="panel">
-    ${renderTopbar('Cantieri / sedi','Crea e cancella')}
-    <div class="grid g4">
-      <label>Nome<input id="newLocName" placeholder="Es. Cantiere Chiavari"></label>
-      <label>Tipo<select id="newLocType"><option value="cantiere">Cantiere</option><option value="magazzino">Magazzino</option></select></label>
-      <label>Note<input id="newLocNotes" placeholder="Facoltative"></label>
-      <label>&nbsp;<button class="primary" onclick="createLocation()">Crea sede</button></label>
-    </div>
-  </div>
-  <div class="panel">
-    <table><thead><tr><th>Nome</th><th>Tipo</th><th>Azioni</th></tr></thead><tbody>
-      ${db.locations.map(l=>`<tr><td data-label="Nome">${esc(l.name)}</td><td data-label="Tipo">${esc(l.type)}</td><td data-label="Azioni" class="actions"><button class="danger" onclick="deleteLocation('${l.id}')">Cancella</button></td></tr>`).join('')}
-    </tbody></table>
-  </div>`;
+  await sb.from('articles').update({ current_holder_user_id:null }).eq('current_holder_user_id', id);
+  await sb.from('articles').update({ last_known_user_id:null }).eq('last_known_user_id', id);
+  const { error } = await sb.from('users').delete().eq('id', id);
+  if(error) return showAlert('error', error.message);
+  await fetchAllData(); render(); showAlert('ok','Utente cancellato.');
 }
 async function createLocation(){
   const name=$('#newLocName').value.trim(), type=$('#newLocType').value, notes=$('#newLocNotes').value.trim();
-  if(!name){ showAlert('error','Inserisci il nome della sede.'); return; }
-  db.locations.push({id:uid('l'), name, type, active:true, notes, createdAt:nowIso()});
-  await saveJsonFile(); render();
+  if(!name) return showAlert('error','Inserisci il nome della sede.');
+  const { error } = await sb.from('locations').insert({ name, type, notes, active:true });
+  if(error) return showAlert('error', error.message);
+  await fetchAllData(); render(); showAlert('ok','Sede creata.');
 }
 async function deleteLocation(id){
-  if(db.articles.some(a=>a.locationId===id && a.active)){ showAlert('error','Non puoi cancellare una sede che contiene articoli attivi.'); return; }
+  if(db.articles.some(a=>a.location_id===id && a.active)){ return showAlert('error','Non puoi cancellare una sede che contiene articoli attivi.'); }
   if(!confirm("ATTENZIONE: cancelli definitivamente la sede?")) return;
-  db.locations = db.locations.filter(l=>l.id!==id);
-  await saveJsonFile(); render();
-}
-
-function renderAdminArticles(){
-  return `<div class="panel">
-    ${renderTopbar('Attrezzature','Crea e cancella')}
-    <div class="grid g4">
-      <label>Nome<input id="newArtName" placeholder="Es. Trapano Bosch"></label>
-      <label>Categoria<input id="newArtCategory" placeholder="Es. Trapani"></label>
-      <label>Codice interno<input id="newArtCode" placeholder="Es. TRP-009"></label>
-      <label>Seriale<input id="newArtSerial" placeholder="Facoltativo"></label>
-      <label>Sede iniziale<select id="newArtLoc">${activeLocations().map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>
-      <label>Stato iniziale<select id="newArtState"><option value="home">Home</option><option value="in_carico">In carico</option></select></label>
-      <label>Possessore iniziale<select id="newArtUser"><option value="">Nessuno</option>${activeUsers().map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></label>
-      <label>&nbsp;<button class="primary" onclick="createArticle()">Crea articolo</button></label>
-    </div>
-  </div>
-  <div class="panel">
-    <table><thead><tr><th>Articolo</th><th>Seriale/Codice</th><th>Sede</th><th>Stato</th><th>Possessore</th><th>Azioni</th></tr></thead><tbody>
-      ${db.articles.filter(a=>a.active).map(a=>`<tr><td data-label="Articolo"><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')}</div></td><td data-label="Seriale/Codice">${esc(a.serial || a.internalCode || '-')}</td><td data-label="Sede">${esc(getLocationName(a.locationId))}</td><td data-label="Stato">${statePill(a)}</td><td data-label="Possessore">${esc(a.currentHolderUserId ? getUserName(a.currentHolderUserId) : 'Home')}</td><td data-label="Azioni" class="actions"><button onclick="openHistory('${a.id}')">Storico</button><button class="danger" onclick="deleteArticle('${a.id}')">Cancella</button></td></tr>`).join('')}
-    </tbody></table>
-  </div>`;
+  const { error } = await sb.from('locations').delete().eq('id', id);
+  if(error) return showAlert('error', error.message);
+  await fetchAllData(); render(); showAlert('ok','Sede cancellata.');
 }
 async function createArticle(){
-  const name=$('#newArtName').value.trim(), category=$('#newArtCategory').value.trim(), internalCode=$('#newArtCode').value.trim(), serial=$('#newArtSerial').value.trim(), locationId=$('#newArtLoc').value, state=$('#newArtState').value, userId=$('#newArtUser').value||null;
-  if(!name){ showAlert('error','Inserisci il nome articolo.'); return; }
-  if(state==='in_carico' && !userId){ showAlert('error','Se lo stato è in carico seleziona un possessore.'); return; }
-  db.articles.push({id:uid('a'), name, category, internalCode, serial, active:true, locationId, state, currentHolderUserId:state==='in_carico'?userId:null, lastKnownUserId:state==='in_carico'?userId:null, lastMovementAt:null, lastNote:'', createdAt:nowIso()});
-  await saveJsonFile(); render();
+  const name=$('#newArtName').value.trim(), category=$('#newArtCategory').value.trim(), internal_code=$('#newArtCode').value.trim(), serial=$('#newArtSerial').value.trim(), location_id=$('#newArtLoc').value, state=$('#newArtState').value, userId=$('#newArtUser').value||null;
+  if(!name) return showAlert('error','Inserisci il nome articolo.');
+  if(state==='in_carico' && !userId) return showAlert('error','Se lo stato è in carico seleziona un possessore.');
+  const { error } = await sb.from('articles').insert({ name, category, internal_code, serial, active:true, location_id, state, current_holder_user_id:state==='in_carico'?userId:null, last_known_user_id:state==='in_carico'?userId:null, last_note:'' });
+  if(error) return showAlert('error', error.message);
+  await fetchAllData(); render(); showAlert('ok','Articolo creato.');
 }
 async function deleteArticle(id){
   if(!confirm("ATTENZIONE: cancelli definitivamente l'articolo? Lo storico dei movimenti resterà nel log.")) return;
-  db.articles = db.articles.filter(a=>a.id!==id);
-  await saveJsonFile(); render();
+  const { error } = await sb.from('articles').delete().eq('id', id);
+  if(error) return showAlert('error', error.message);
+  await fetchAllData(); render(); showAlert('ok','Articolo cancellato.');
 }
 
-function renderAdminLogs(){
-  return `<div class="panel">
-    ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
-    <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody id="adminLogsBody">
-      ${renderAdminLogsBodyContent()}
-    </tbody></table>
-  </div>`;
+function exportLocationPdf(){
+  const locationId = document.getElementById('pdfLocation').value;
+  const location = db.locations.find(l=>l.id===locationId);
+  const articles = db.articles.filter(a=>a.location_id===locationId && a.active);
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>Elenco materiale - ${esc(location.name)}</title><style>body{font-family:Arial;padding:20px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #ccc;padding:8px;text-align:left} h1{margin:0 0 10px 0} .m{color:#555}</style></head><body><h1>Elenco materiale - ${esc(location.name)}</h1><div class="m">Data export: ${new Date().toLocaleString('it-IT')}</div><table><thead><tr><th>Articolo</th><th>Categoria</th><th>Codice/Seriale</th><th>Stato</th><th>Possessore</th><th>Ultimo movimento</th></tr></thead><tbody>${articles.map(a=>`<tr><td>${esc(a.name)}</td><td>${esc(a.category||'-')}</td><td>${esc(a.serial||a.internal_code||'-')}</td><td>${a.state==='home'?'Home':'In carico'}</td><td>${esc(a.current_holder_user_id?getUserName(a.current_holder_user_id):'Home')}</td><td>${formatDate(a.last_movement_at)}</td></tr>`).join('')}</tbody></table></body></html>`);
+  w.document.close(); w.focus(); w.print();
 }
 
-function pollForRemoteChanges(){
-  if(!hasToken() || !db || document.hidden || !navigator.onLine) return;
-  const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}?ref=${GITHUB_BRANCH}`;
-  fetch(url,{ headers:{ Authorization:`Bearer ${GITHUB_TOKEN}`, Accept:'application/vnd.github+json' } })
-    .then(res => res.ok ? res.json() : null)
-    .then(data => {
-      if(!data) return;
-      if(currentSHA && data.sha !== currentSHA){
-        currentSHA = data.sha;
-        db = JSON.parse(base64ToUtf8((data.content || "").replace(/\\n/g,'')));
-        syncState = hasPendingSync() ? "offline" : "idle";
-        broadcastLocalUpdate();
-        if(!document.getElementById("modal")?.classList.contains("open")){
-          updateLiveViews();
-          pulseUpdatedUi();
-        } else {
-          renderSyncBadgeOnly();
-        }
-      }
-    }).catch(err => console.error("POLL ERROR:", err));
-}
+window.saveToken = ()=>{};
+window.resetToken = ()=>{};
+window.adminLogin=adminLogin;
+window.openPinModal=openPinModal;
+window.userLogin=userLogin;
+window.pinKey=pinKey;
+window.selectLocation=selectLocation;
+window.toggleArticle=toggleArticle;
+window.openMovementModal=openMovementModal;
+window.confirmMovement=confirmMovement;
+window.openHistory=openHistory;
+window.closeModal=closeModal;
+window.setAdminView=setAdminView;
+window.createUser=createUser;
+window.resetPin=resetPin;
+window.deleteUser=deleteUser;
+window.createLocation=createLocation;
+window.deleteLocation=deleteLocation;
+window.createArticle=createArticle;
+window.deleteArticle=deleteArticle;
+window.logoutAll=logoutAll;
+window.exportLocationPdf=exportLocationPdf;
+window.handleMovementImageChange=handleMovementImageChange;
+window.setGlobalSearch=setGlobalSearch;
+window.setLocationSearch=setLocationSearch;
 
-window.saveToken=saveToken; window.resetToken=resetToken; window.loadFromGitHub=loadFromGitHub; window.saveJsonFile=saveJsonFile; window.pinKey=pinKey; window.adminLogin=adminLogin; window.openPinModal=openPinModal; window.userLogin=userLogin; window.selectLocation=selectLocation; window.toggleArticle=toggleArticle; window.openMovementModal=openMovementModal; window.confirmMovement=confirmMovement; window.openHistory=openHistory; window.closeModal=closeModal; window.setAdminView=setAdminView; window.createUser=createUser; window.resetPin=resetPin; window.deleteUser=deleteUser; window.createLocation=createLocation; window.deleteLocation=deleteLocation; window.createArticle=createArticle; window.deleteArticle=deleteArticle; window.logoutAll=logoutAll; window.exportLocationPdf=exportLocationPdf; window.handleMovementImageChange=handleMovementImageChange; window.setGlobalSearch=setGlobalSearch; window.setLocationSearch=setLocationSearch;
-
-if(tabChannel){
-  tabChannel.onmessage = (event) => applyRemoteTabUpdate(event.data);
-}
-window.addEventListener("storage", (event) => {
-  if(event.key === TAB_SYNC_KEY && event.newValue){
-    try { applyRemoteTabUpdate(JSON.parse(event.newValue)); } catch(err){ console.error("STORAGE SYNC ERROR:", err); }
-  }
-});
-window.addEventListener('online', ()=>{ syncPendingIfNeeded(); loadFromGitHub(false); });
-window.addEventListener('visibilitychange', ()=>{ if(!document.hidden && hasToken()) loadFromGitHub(false); });
-setInterval(pollForRemoteChanges, POLL_MS);
-
-if(hasToken()){ loadFromGitHub(false).then(ok=>{ if(!ok) render(); }); } else { renderTokenSetup(); }
+initApp();
 </script>
 </body>
 </html>
