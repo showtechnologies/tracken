@@ -89,7 +89,7 @@
       "state": "home",
       "currentHolderUserId": null,
       "lastKnownUserId": "u_443a7crj_mn3470ul",
-      "lastMovementAt": "2026-03-26T16:20:15.815Z",
+      "lastMovementAt": "2026-03-26T16:20:52.792Z",
       "lastNote": "",
       "createdAt": "2026-03-23T11:41:06.480Z"
     },
@@ -111,8 +111,8 @@
   ],
   "movements": [
     {
-      "id": "mov_ga74blvu_mn7ohykn",
-      "timestamp": "2026-03-26T16:20:15.815Z",
+      "id": "mov_bqbg2ctz_mn7oir3s",
+      "timestamp": "2026-03-26T16:20:52.792Z",
       "movementType": "restituzione",
       "articleId": "a_htu7rwxp_mn347epc",
       "articleName": "pulveriera",
@@ -124,7 +124,7 @@
       "recordedByUserId": "u_443a7crj_mn3470ul",
       "note": "",
       "imageData": null,
-      "sessionId": "sess_142hwqm8_mn7ohsnk"
+      "sessionId": "sess_s7thxutt_mn7oibzh"
     },
     {
       "id": "mov_5xcvhq8w_mn7ed22l",
