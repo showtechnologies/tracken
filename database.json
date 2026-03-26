@@ -56,11 +56,11 @@
       "serial": "SN7781",
       "active": true,
       "locationId": "l2",
-      "state": "home",
-      "currentHolderUserId": null,
+      "state": "in_carico",
+      "currentHolderUserId": "u_443a7crj_mn3470ul",
       "lastKnownUserId": "u_443a7crj_mn3470ul",
-      "lastMovementAt": "2026-03-25T16:18:27.227Z",
-      "lastNote": "",
+      "lastMovementAt": "2026-03-26T19:26:58.020Z",
+      "lastNote": "sto prelevando",
       "createdAt": "2024-01-01T10:00:00Z"
     },
     {
@@ -110,6 +110,22 @@
     }
   ],
   "movements": [
+    {
+      "id": "mov_jss0pgv1_mn7v6290",
+      "timestamp": "2026-03-26T19:26:58.020Z",
+      "movementType": "prelievo",
+      "articleId": "a1",
+      "articleName": "Trapano Bosch 18V",
+      "articleSerial": "SN7781",
+      "fromLocationId": "l2",
+      "toLocationId": "l2",
+      "fromUserId": null,
+      "toUserId": "u_443a7crj_mn3470ul",
+      "recordedByUserId": "u_443a7crj_mn3470ul",
+      "note": "sto prelevando",
+      "imageData": null,
+      "sessionId": "sess_adpadvvu_mn7v5mhd"
+    },
     {
       "id": "mov_ufx9lzqh_mn7ud1jg",
       "timestamp": "2026-03-26T19:04:24.076Z",
