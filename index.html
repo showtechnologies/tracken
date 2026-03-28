@@ -93,6 +93,9 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const ADMIN_USER="admin", ADMIN_PASSWORD="admin123", SESSION_TIMEOUT_MINUTES=20;
+const OFFLINE_QUEUE_KEY="tracken_supabase_offline_queue_v1";
+const OFFLINE_RETRY_MS = 5000;
+let offlineRetryTimer = null;
 
 let db = { users:[], locations:[], articles:[], movements:[] };
 let currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null;
@@ -107,6 +110,87 @@ function formatDate(iso){ return iso ? new Date(iso).toLocaleString('it-IT') : '
 function esc(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
 function hashPin(pin){ return btoa(`pin:${pin}:v1`); }
 function touchSession(){ lastActivityAt = nowIso(); }
+function getOfflineQueue(){
+  try{ return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]"); }catch(e){ return []; }
+}
+function setOfflineQueue(queue){
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+}
+function queueCount(){ return getOfflineQueue().length; }
+function startOfflineRetryLoop(){
+  stopOfflineRetryLoop();
+  offlineRetryTimer = setInterval(async () => {
+    if(!queueCount()) return;
+    if(!navigator.onLine) return;
+    await processOfflineQueue(false);
+  }, OFFLINE_RETRY_MS);
+}
+function stopOfflineRetryLoop(){
+  if(offlineRetryTimer){
+    clearInterval(offlineRetryTimer);
+    offlineRetryTimer = null;
+  }
+}
+function queueOperation(op){
+  const queue = getOfflineQueue();
+  queue.push({ ...op, queued_at: nowIso(), local_id: uid() });
+  setOfflineQueue(queue);
+  renderSyncBadgeOnly();
+  startOfflineRetryLoop();
+}
+function removeQueuedOperation(localId){
+  const queue = getOfflineQueue().filter(op => op.local_id !== localId);
+  setOfflineQueue(queue);
+  renderSyncBadgeOnly();
+  if(!queue.length) stopOfflineRetryLoop();
+}
+async function processOfflineQueue(showMessage=true){
+  const queue = getOfflineQueue();
+  if(!queue.length || !navigator.onLine) return false;
+
+  syncState = "syncing";
+  renderSyncBadgeOnly();
+
+  let processed = 0;
+
+  for(const op of [...queue]){
+    let ok = false;
+    try{
+      if(op.kind === 'movement'){
+        ok = await commitMovementOperation(op, false, true);
+      }
+    }catch(err){
+      console.error("QUEUE PROCESS ERROR:", err);
+      ok = false;
+    }
+
+    if(ok){
+      removeQueuedOperation(op.local_id);
+      processed++;
+    }else{
+      break;
+    }
+  }
+
+  syncState = "idle";
+  renderSyncBadgeOnly();
+
+  const remaining = queueCount();
+
+  if(processed > 0){
+    await fetchAllData();
+    render();
+    if(showMessage) showAlert('ok', `${processed} operazioni offline sincronizzate.`);
+  }
+
+  if(remaining > 0){
+    startOfflineRetryLoop();
+  } else {
+    stopOfflineRetryLoop();
+  }
+
+  return processed > 0;
+}
 function sessionExpired(){ if(!lastActivityAt) return false; return (Date.now() - new Date(lastActivityAt).getTime()) > SESSION_TIMEOUT_MINUTES*60*1000; }
 function ensureSession(){ if(sessionExpired()) logoutAll(); }
 function logoutAll(){ currentUserId=null; currentLocationId=null; adminLogged=false; currentView='home'; selectedArticleIds=[]; currentSessionId=null; lastActivityAt=null; render(); }
@@ -131,7 +215,12 @@ function renderAlert(){ return !alertState ? '' : `<div class="alert show ${aler
 function renderAlertOnly(){ const slot = document.getElementById("topAlertSlot"); if(slot) slot.innerHTML = renderAlert(); }
 
 function renderTopbar(title,subtitle,extra=''){ return `<div class="top"><div><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="actions">${extra}</div></div>`; }
-function renderSyncBadge(){ return `<span class="pill sync">${syncState==='syncing'?'Sincronizzazione...':'Realtime attivo'}</span>`; }
+function renderSyncBadge(){
+  if(queueCount()>0) return `<span class="pill error">Offline queue: ${queueCount()}</span>`;
+  if(syncState==='syncing') return `<span class="pill sync">Sincronizzazione...</span>`;
+  if(!navigator.onLine) return `<span class="pill error">Offline</span>`;
+  return `<span class="pill sync">Realtime attivo</span>`;
+}
 function renderSyncBadgeOnly(){ document.querySelectorAll('[data-sync-badge]').forEach(el=>el.innerHTML = renderSyncBadge()); }
 
 function getUserName(id){ const u=db.users.find(x=>x.id===id); return u ? u.name : '-'; }
@@ -206,29 +295,103 @@ function subscribeRealtime(){
 
 async function initApp(){
   const ok = await fetchAllData();
-  if(ok) subscribeRealtime();
+  if(ok){
+    subscribeRealtime();
+    await processOfflineQueue(false);
+  }
+  startOfflineRetryLoop();
   render();
 }
 
-async function saveMovementAndArticle(article, movement, articlePatch){
+function applyLocalMovementState(articleId, movement, articlePatch){
+  const article = db.articles.find(a=>a.id===articleId);
+  if(article) Object.assign(article, articlePatch);
+  db.movements.unshift({
+    id: movement.id || uid(),
+    article_id: movement.article_id,
+    article_name: movement.article_name,
+    article_serial: movement.article_serial || '',
+    movement_type: movement.movement_type,
+    from_location_id: movement.from_location_id,
+    to_location_id: movement.to_location_id,
+    from_user_id: movement.from_user_id,
+    to_user_id: movement.to_user_id,
+    recorded_by_user_id: movement.recorded_by_user_id,
+    note: movement.note || '',
+    image_data: movement.image_data || null,
+    session_id: movement.session_id || '',
+    created_at: nowIso(),
+    _queued: true
+  });
+}
+async function commitMovementOperation(op, refreshAfter=true, fromQueue=false){
   syncState='syncing'; renderSyncBadgeOnly();
-  const { error: e1 } = await sb.from('movements').insert(movement);
+  const movementPayload = {
+    article_id: op.article_id,
+    article_name: op.article_name,
+    article_serial: op.article_serial || '',
+    movement_type: op.movement_type,
+    from_location_id: op.from_location_id,
+    to_location_id: op.to_location_id,
+    from_user_id: op.from_user_id,
+    to_user_id: op.to_user_id,
+    recorded_by_user_id: op.recorded_by_user_id,
+    note: op.note || '',
+    image_data: op.image_data || null,
+    session_id: op.session_id || ''
+  };
+  const { error: e1 } = await sb.from('movements').insert(movementPayload);
   if(e1){
     syncState='error'; renderSyncBadgeOnly();
     console.error(e1);
-    showAlert('error', `Errore salvataggio movimento: ${e1.message}`);
+    if(!fromQueue) showAlert('error', `Errore salvataggio movimento: ${e1.message}`);
     return false;
   }
-  const { error: e2 } = await sb.from('articles').update(articlePatch).eq('id', article.id);
+  const { error: e2 } = await sb.from('articles').update(op.article_patch).eq('id', op.article_id);
   if(e2){
     syncState='error'; renderSyncBadgeOnly();
     console.error(e2);
-    showAlert('error', `Movimento salvato ma stato articolo non aggiornato: ${e2.message}`);
+    if(!fromQueue) showAlert('error', `Movimento salvato ma stato articolo non aggiornato: ${e2.message}`);
     return false;
   }
-  await fetchAllData();
-  render();
+  if(refreshAfter){
+    await fetchAllData();
+    render();
+  } else {
+    renderSyncBadgeOnly();
+  }
   return true;
+}
+async function saveMovementAndArticle(article, movement, articlePatch){
+  const op = {
+    kind:'movement',
+    article_id: article.id,
+    article_name: movement.article_name,
+    article_serial: movement.article_serial || '',
+    movement_type: movement.movement_type,
+    from_location_id: movement.from_location_id,
+    to_location_id: movement.to_location_id,
+    from_user_id: movement.from_user_id,
+    to_user_id: movement.to_user_id,
+    recorded_by_user_id: movement.recorded_by_user_id,
+    note: movement.note || '',
+    image_data: movement.image_data || null,
+    session_id: movement.session_id || '',
+    article_patch: articlePatch
+  };
+
+  try{
+    const ok = await commitMovementOperation(op, true, false);
+    if(ok) return true;
+    throw new Error("Commit fallito");
+  }catch(err){
+    console.warn("OFFLINE MODE ATTIVO:", err);
+    applyLocalMovementState(article.id, movement, articlePatch);
+    queueOperation(op);
+    showAlert('info', 'Nessuna connessione. Operazione salvata offline.');
+    render();
+    return true;
+  }
 }
 
 async function compressImageFile(file, maxSide=1200, quality=0.7){
@@ -291,7 +454,7 @@ function renderArticleRow(a){
 function renderHome(searchBox, results){
   return `<div class="panel">
     <div id="topAlertSlot">${renderAlert()}</div>
-    ${renderTopbar('Tracken - Supabase','Lettura e salvataggio realtime attivi', `<span data-sync-badge>${renderSyncBadge()}</span>`)}
+    ${renderTopbar('Tracken - Supabase','Lettura realtime e coda offline attive', `<span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="grid g2">
       <div class="panel" style="margin:0">
@@ -632,6 +795,22 @@ function exportLocationPdf(){
   w.document.close(); w.focus(); w.print();
 }
 
+window.addEventListener('online', async ()=>{
+  renderSyncBadgeOnly();
+  showAlert('ok','Connessione ripristinata. Avvio sincronizzazione coda offline.');
+  await processOfflineQueue(true);
+  startOfflineRetryLoop();
+});
+window.addEventListener('offline', ()=>{
+  renderSyncBadgeOnly();
+  showAlert('info','Sei offline. Le prossime movimentazioni saranno messe in coda.');
+  startOfflineRetryLoop();
+});
+document.addEventListener('visibilitychange', async ()=>{
+  if(!document.hidden && queueCount() > 0 && navigator.onLine){
+    await processOfflineQueue(false);
+  }
+});
 window.saveToken = ()=>{};
 window.resetToken = ()=>{};
 window.adminLogin=adminLogin;
