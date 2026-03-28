@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tracken Supabase v1</title>
+  <title>Tracken Supabase v2 Offline Progress</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -78,6 +78,15 @@
     .empty{padding:16px;border:1px dashed var(--border);border-radius:14px;background:#fff}
     .stats{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
     .stat{border:1px solid var(--border);border-radius:14px;padding:14px;background:linear-gradient(180deg,#fff,#f8fbff)} .stat .value{font-size:1.6rem;font-weight:800;margin-top:6px}
+
+    .progress-overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);display:none;align-items:center;justify-content:center;padding:16px;z-index:1400}
+    .progress-overlay.show{display:flex}
+    .progress-card{width:min(460px,100%);background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:18px}
+    .progress-title{font-size:1.05rem;font-weight:800;margin:0 0 6px 0}
+    .progress-sub{color:var(--muted);margin:0 0 12px 0}
+    .progress-track{height:12px;background:#e5e7eb;border-radius:999px;overflow:hidden}
+    .progress-bar{height:100%;width:28%;background:linear-gradient(90deg,#60a5fa,#1d4ed8);border-radius:999px;transition:width .25s ease}
+    .progress-steps{margin-top:12px;font-size:.9rem;color:var(--muted)}
     @media(max-width:980px){.layout{grid-template-columns:1fr}.g4,.g3,.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.article{grid-template-columns:34px 1fr 1fr}.article>:last-child{grid-column:2/-1}}
     @media(max-width:720px){.app{padding:10px;padding-bottom:110px}.g2,.g3,.g4,.stats{grid-template-columns:1fr}.actions,.modal-actions{flex-direction:column}.actions button,.modal-actions button{width:100%}.sticky-bar{left:8px;right:8px;bottom:8px;padding:10px}.sticky-bar .actions{grid-template-columns:repeat(2,minmax(0,1fr))}.article{grid-template-columns:28px 1fr}.article>div,.article>button{grid-column:2}.panel,.sidebar,.sticky-bar{padding:12px}table,thead,tbody,tr,th,td{display:block}thead{display:none}table{border-collapse:separate;border-spacing:0 8px}tbody tr{background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:var(--shadow)}td{border:0;padding:5px 2px}td::before{content:attr(data-label);display:block;font-size:.74rem;font-weight:700;color:var(--muted);margin-bottom:3px}}
   </style>
@@ -86,6 +95,7 @@
 <div id="toastWrap" class="toast-wrap"></div>
 <div class="app" id="app"></div>
 <div class="modal" id="modal"><div class="modal-card" id="modalCard"></div></div>
+<div class="progress-overlay" id="progressOverlay"><div class="progress-card"><div class="progress-title" id="progressTitle">Registrazione operazione...</div><p class="progress-sub" id="progressSub">Attendi qualche secondo.</p><div class="progress-track"><div class="progress-bar" id="progressBar"></div></div><div class="progress-steps" id="progressSteps">Preparazione</div></div></div>
 
 <script>
 const SUPABASE_URL = "https://ytmvwotpniiortfagjbl.supabase.co";
@@ -150,46 +160,53 @@ async function processOfflineQueue(showMessage=true){
 
   syncState = "syncing";
   renderSyncBadgeOnly();
+  showProgress('Sincronizzazione coda offline...', 'Sto inviando al database le operazioni salvate in locale.', `Coda offline: 0 / ${queue.length}`, 18);
 
   let processed = 0;
 
-  for(const op of [...queue]){
-    let ok = false;
-    try{
-      if(op.kind === 'movement'){
-        ok = await commitMovementOperation(op, false, true);
+  try{
+    for(const op of [...queue]){
+      let ok = false;
+      try{
+        if(op.kind === 'movement'){
+          updateProgress(`Coda offline: ${processed+1} / ${queue.length}`, Math.round(18 + ((processed+1)/queue.length)*60), 'Invio operazione al database.');
+          ok = await commitMovementOperation(op, false, true);
+        }
+      }catch(err){
+        console.error("QUEUE PROCESS ERROR:", err);
+        ok = false;
       }
-    }catch(err){
-      console.error("QUEUE PROCESS ERROR:", err);
-      ok = false;
+
+      if(ok){
+        removeQueuedOperation(op.local_id);
+        processed++;
+      }else{
+        break;
+      }
     }
 
-    if(ok){
-      removeQueuedOperation(op.local_id);
-      processed++;
-    }else{
-      break;
+    syncState = "idle";
+    renderSyncBadgeOnly();
+
+    const remaining = queueCount();
+
+    if(processed > 0){
+      updateProgress('Aggiornamento dati locali', 92, 'Ricarico i dati più recenti.');
+      await fetchAllData();
+      render();
+      if(showMessage) showAlert('ok', `${processed} operazioni offline sincronizzate.`);
     }
+
+    if(remaining > 0){
+      startOfflineRetryLoop();
+    } else {
+      stopOfflineRetryLoop();
+    }
+
+    return processed > 0;
+  } finally {
+    setTimeout(hideProgress, 350);
   }
-
-  syncState = "idle";
-  renderSyncBadgeOnly();
-
-  const remaining = queueCount();
-
-  if(processed > 0){
-    await fetchAllData();
-    render();
-    if(showMessage) showAlert('ok', `${processed} operazioni offline sincronizzate.`);
-  }
-
-  if(remaining > 0){
-    startOfflineRetryLoop();
-  } else {
-    stopOfflineRetryLoop();
-  }
-
-  return processed > 0;
 }
 function sessionExpired(){ if(!lastActivityAt) return false; return (Date.now() - new Date(lastActivityAt).getTime()) > SESSION_TIMEOUT_MINUTES*60*1000; }
 function ensureSession(){ if(sessionExpired()) logoutAll(); }
@@ -213,6 +230,31 @@ function showAlert(type,msg){
 }
 function renderAlert(){ return !alertState ? '' : `<div class="alert show ${alertState.type}">${esc(alertState.message)}</div>`; }
 function renderAlertOnly(){ const slot = document.getElementById("topAlertSlot"); if(slot) slot.innerHTML = renderAlert(); }
+
+function showProgress(title='Registrazione operazione...', sub='Attendi qualche secondo.', step='Preparazione', value=18){
+  const overlay = document.getElementById('progressOverlay');
+  const t = document.getElementById('progressTitle');
+  const s = document.getElementById('progressSub');
+  const st = document.getElementById('progressSteps');
+  const bar = document.getElementById('progressBar');
+  if(t) t.textContent = title;
+  if(s) s.textContent = sub;
+  if(st) st.textContent = step;
+  if(bar) bar.style.width = `${Math.max(8, Math.min(100, value))}%`;
+  if(overlay) overlay.classList.add('show');
+}
+function updateProgress(step='Elaborazione', value=50, sub=null){
+  const s = document.getElementById('progressSub');
+  const st = document.getElementById('progressSteps');
+  const bar = document.getElementById('progressBar');
+  if(sub !== null && s) s.textContent = sub;
+  if(st) st.textContent = step;
+  if(bar) bar.style.width = `${Math.max(8, Math.min(100, value))}%`;
+}
+function hideProgress(){
+  const overlay = document.getElementById('progressOverlay');
+  if(overlay) overlay.classList.remove('show');
+}
 
 function renderTopbar(title,subtitle,extra=''){ return `<div class="top"><div><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="actions">${extra}</div></div>`; }
 function renderSyncBadge(){
@@ -294,13 +336,21 @@ function subscribeRealtime(){
 }
 
 async function initApp(){
-  const ok = await fetchAllData();
-  if(ok){
-    subscribeRealtime();
-    await processOfflineQueue(false);
+  try{
+    showProgress('Avvio applicazione...', 'Caricamento dati da Supabase.', 'Connessione al database', 20);
+    const ok = await fetchAllData();
+    updateProgress('Attivazione realtime', 60);
+    if(ok){
+      subscribeRealtime();
+      updateProgress('Verifica coda offline', 82);
+      await processOfflineQueue(false);
+    }
+    startOfflineRetryLoop();
+    updateProgress('Aggiornamento schermata', 96);
+    render();
+  } finally {
+    setTimeout(hideProgress, 250);
   }
-  startOfflineRetryLoop();
-  render();
 }
 
 function applyLocalMovementState(articleId, movement, articlePatch){
@@ -326,41 +376,49 @@ function applyLocalMovementState(articleId, movement, articlePatch){
 }
 async function commitMovementOperation(op, refreshAfter=true, fromQueue=false){
   syncState='syncing'; renderSyncBadgeOnly();
-  const movementPayload = {
-    article_id: op.article_id,
-    article_name: op.article_name,
-    article_serial: op.article_serial || '',
-    movement_type: op.movement_type,
-    from_location_id: op.from_location_id,
-    to_location_id: op.to_location_id,
-    from_user_id: op.from_user_id,
-    to_user_id: op.to_user_id,
-    recorded_by_user_id: op.recorded_by_user_id,
-    note: op.note || '',
-    image_data: op.image_data || null,
-    session_id: op.session_id || ''
-  };
-  const { error: e1 } = await sb.from('movements').insert(movementPayload);
-  if(e1){
-    syncState='error'; renderSyncBadgeOnly();
-    console.error(e1);
-    if(!fromQueue) showAlert('error', `Errore salvataggio movimento: ${e1.message}`);
-    return false;
+  showProgress(fromQueue ? 'Sincronizzazione queue offline...' : 'Registrazione operazione...', 'Sto salvando i dati sul database.', 'Registrazione movimento', 28);
+  try{
+    const movementPayload = {
+      article_id: op.article_id,
+      article_name: op.article_name,
+      article_serial: op.article_serial || '',
+      movement_type: op.movement_type,
+      from_location_id: op.from_location_id,
+      to_location_id: op.to_location_id,
+      from_user_id: op.from_user_id,
+      to_user_id: op.to_user_id,
+      recorded_by_user_id: op.recorded_by_user_id,
+      note: op.note || '',
+      image_data: op.image_data || null,
+      session_id: op.session_id || ''
+    };
+    const { error: e1 } = await sb.from('movements').insert(movementPayload);
+    if(e1){
+      syncState='error'; renderSyncBadgeOnly();
+      console.error(e1);
+      if(!fromQueue) showAlert('error', `Errore salvataggio movimento: ${e1.message}`);
+      return false;
+    }
+    updateProgress('Aggiornamento stato articolo', 62, 'Movimento registrato. Aggiorno lo stato attuale dell’articolo.');
+    const { error: e2 } = await sb.from('articles').update(op.article_patch).eq('id', op.article_id);
+    if(e2){
+      syncState='error'; renderSyncBadgeOnly();
+      console.error(e2);
+      if(!fromQueue) showAlert('error', `Movimento salvato ma stato articolo non aggiornato: ${e2.message}`);
+      return false;
+    }
+    if(refreshAfter){
+      updateProgress('Aggiornamento schermata', 86, 'Ricarico i dati più recenti.');
+      await fetchAllData();
+      render();
+    } else {
+      renderSyncBadgeOnly();
+    }
+    updateProgress('Completato', 100, 'Operazione completata.');
+    return true;
+  } finally {
+    setTimeout(hideProgress, 350);
   }
-  const { error: e2 } = await sb.from('articles').update(op.article_patch).eq('id', op.article_id);
-  if(e2){
-    syncState='error'; renderSyncBadgeOnly();
-    console.error(e2);
-    if(!fromQueue) showAlert('error', `Movimento salvato ma stato articolo non aggiornato: ${e2.message}`);
-    return false;
-  }
-  if(refreshAfter){
-    await fetchAllData();
-    render();
-  } else {
-    renderSyncBadgeOnly();
-  }
-  return true;
 }
 async function saveMovementAndArticle(article, movement, articlePatch){
   const op = {
@@ -386,11 +444,15 @@ async function saveMovementAndArticle(article, movement, articlePatch){
     throw new Error("Commit fallito");
   }catch(err){
     console.warn("OFFLINE MODE ATTIVO:", err);
+    showProgress('Registrazione offline...', 'Nessuna connessione disponibile.', 'Salvataggio in coda locale', 55);
     applyLocalMovementState(article.id, movement, articlePatch);
     queueOperation(op);
+    updateProgress('Aggiornamento schermata', 100, 'Operazione salvata offline.');
     showAlert('info', 'Nessuna connessione. Operazione salvata offline.');
     render();
     return true;
+  } finally {
+    setTimeout(hideProgress, 350);
   }
 }
 
