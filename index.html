@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tracken Supabase v2 Offline Progress</title>
+  <title>Tracken Supabase v2 Offline Progress Stable Fixed</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -78,7 +78,6 @@
     .empty{padding:16px;border:1px dashed var(--border);border-radius:14px;background:#fff}
     .stats{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
     .stat{border:1px solid var(--border);border-radius:14px;padding:14px;background:linear-gradient(180deg,#fff,#f8fbff)} .stat .value{font-size:1.6rem;font-weight:800;margin-top:6px}
-
     .progress-overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);display:none;align-items:center;justify-content:center;padding:16px;z-index:1400}
     .progress-overlay.show{display:flex}
     .progress-card{width:min(460px,100%);background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:18px}
@@ -163,7 +162,6 @@ async function processOfflineQueue(showMessage=true){
   showProgress('Sincronizzazione coda offline...', 'Sto inviando al database le operazioni salvate in locale.', `Coda offline: 0 / ${queue.length}`, 18);
 
   let processed = 0;
-
   try{
     for(const op of [...queue]){
       let ok = false;
@@ -230,7 +228,6 @@ function showAlert(type,msg){
 }
 function renderAlert(){ return !alertState ? '' : `<div class="alert show ${alertState.type}">${esc(alertState.message)}</div>`; }
 function renderAlertOnly(){ const slot = document.getElementById("topAlertSlot"); if(slot) slot.innerHTML = renderAlert(); }
-
 function showProgress(title='Registrazione operazione...', sub='Attendi qualche secondo.', step='Preparazione', value=18){
   const overlay = document.getElementById('progressOverlay');
   const t = document.getElementById('progressTitle');
@@ -376,7 +373,7 @@ function applyLocalMovementState(articleId, movement, articlePatch){
 }
 async function commitMovementOperation(op, refreshAfter=true, fromQueue=false){
   syncState='syncing'; renderSyncBadgeOnly();
-  showProgress(fromQueue ? 'Sincronizzazione queue offline...' : 'Registrazione operazione...', 'Sto salvando i dati sul database.', 'Registrazione movimento', 28);
+  showProgress(fromQueue ? 'Sincronizzazione coda offline...' : 'Registrazione operazione...', 'Sto salvando i dati sul database.', 'Registrazione movimento', 28);
   try{
     const movementPayload = {
       article_id: op.article_id,
