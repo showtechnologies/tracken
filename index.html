@@ -108,7 +108,7 @@ let offlineRetryTimer = null;
 
 let db = { users:[], locations:[], articles:[], movements:[] };
 let currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null;
-let modalImageData=null, globalSearchTerm="", locationSearchTerm="", focusState=null, syncState="idle";
+let modalImageData=null, modalGeoState=null, geoAddressSyncInProgress=false, globalSearchTerm="", locationSearchTerm="", focusState=null, syncState="idle";
 let rtChannel = null;
 
 const $=s=>document.querySelector(s);
@@ -341,6 +341,7 @@ async function initApp(){
       subscribeRealtime();
       updateProgress('Verifica coda offline', 82);
       await processOfflineQueue(false);
+      await fillMissingGeoAddresses(8);
     }
     startOfflineRetryLoop();
     updateProgress('Aggiornamento schermata', 96);
@@ -367,6 +368,12 @@ function applyLocalMovementState(articleId, movement, articlePatch){
     note: movement.note || '',
     image_data: movement.image_data || null,
     session_id: movement.session_id || '',
+    geo_lat: movement.geo_lat ?? null,
+    geo_lng: movement.geo_lng ?? null,
+    geo_accuracy_m: movement.geo_accuracy_m ?? null,
+    geo_captured_at: movement.geo_captured_at ?? null,
+    geo_source: movement.geo_source || null,
+    geo_address: movement.geo_address || null,
     created_at: nowIso(),
     _queued: true
   });
@@ -387,7 +394,13 @@ async function commitMovementOperation(op, refreshAfter=true, fromQueue=false){
       recorded_by_user_id: op.recorded_by_user_id,
       note: op.note || '',
       image_data: op.image_data || null,
-      session_id: op.session_id || ''
+      session_id: op.session_id || '',
+      geo_lat: op.geo_lat ?? null,
+      geo_lng: op.geo_lng ?? null,
+      geo_accuracy_m: op.geo_accuracy_m ?? null,
+      geo_captured_at: op.geo_captured_at ?? null,
+      geo_source: op.geo_source || null,
+      geo_address: op.geo_address || null
     };
     const { error: e1 } = await sb.from('movements').insert(movementPayload);
     if(e1){
@@ -432,6 +445,12 @@ async function saveMovementAndArticle(article, movement, articlePatch){
     note: movement.note || '',
     image_data: movement.image_data || null,
     session_id: movement.session_id || '',
+    geo_lat: movement.geo_lat ?? null,
+    geo_lng: movement.geo_lng ?? null,
+    geo_accuracy_m: movement.geo_accuracy_m ?? null,
+    geo_captured_at: movement.geo_captured_at ?? null,
+    geo_source: movement.geo_source || null,
+    geo_address: movement.geo_address || null,
     article_patch: articlePatch
   };
 
@@ -481,6 +500,171 @@ async function handleMovementImageChange(e){
   modalImageData = data;
   const p=document.getElementById("imgPreviewWrap");
   if(p) p.innerHTML = `<img class="preview-img" src="${data}" alt="preview">`;
+}
+
+
+function formatGeoPoint(lat,lng){
+  if(lat==null || lng==null) return '-';
+  return `${Number(lat).toFixed(6)}, ${Number(lng).toFixed(6)}`;
+}
+function renderGeoStatus(){
+  const el = document.getElementById('geoStatus');
+  if(!el) return;
+  if(!modalGeoState){
+    el.innerHTML = `<span class="pill error">Posizione non richiesta</span>`;
+    return;
+  }
+  if(modalGeoState.loading){
+    el.innerHTML = `<span class="pill sync">Rilevazione posizione in corso...</span>`;
+    return;
+  }
+  if(modalGeoState.ok){
+    const accuracy = modalGeoState.accuracy != null ? ` • accuratezza ~${Math.round(modalGeoState.accuracy)} m` : '';
+    const addressLine = modalGeoState.geo_address
+      ? `<div class="small muted" style="margin-top:6px">${esc(modalGeoState.geo_address)}</div>`
+      : modalGeoState.address_status==='offline_pending'
+      ? `<div class="small muted" style="margin-top:6px">Indirizzo non disponibile offline. Verrà recuperato quando torni online.</div>`
+      : modalGeoState.address_status==='lookup_failed'
+      ? `<div class="small muted" style="margin-top:6px">Coordinate salvate. Indirizzo non recuperato: ${esc(modalGeoState.address_error || 'errore sconosciuto')}.</div>`
+      : `<div class="small muted" style="margin-top:6px">Coordinate salvate. Recupero indirizzo in corso...</div>`;
+    el.innerHTML = `<span class="pill sync">GPS acquisito</span><div class="small muted" style="margin-top:6px">${esc(formatGeoPoint(modalGeoState.lat, modalGeoState.lng))}${esc(accuracy)}</div>${addressLine}`;
+    return;
+  }
+  el.innerHTML = `<span class="pill error">GPS non disponibile</span><div class="small muted" style="margin-top:6px">${esc(modalGeoState.error || 'Permesso negato o timeout.')}</div>`;
+}
+function safeGeoCapturedAt(rawTs){
+  const now = Date.now();
+  const candidates = [];
+  if(typeof rawTs === 'number' && Number.isFinite(rawTs)) {
+    candidates.push(rawTs);
+    candidates.push(rawTs * 1000);
+  }
+  if(typeof rawTs === 'string' && rawTs.trim() !== '') {
+    const n = Number(rawTs);
+    if(Number.isFinite(n)) {
+      candidates.push(n);
+      candidates.push(n * 1000);
+    }
+  }
+
+  const minOk = Date.UTC(2020, 0, 1);
+  const maxOk = now + 24 * 60 * 60 * 1000;
+
+  for(const candidate of candidates){
+    const d = new Date(candidate);
+    const t = d.getTime();
+    if(Number.isFinite(t) && t >= minOk && t <= maxOk) return d.toISOString();
+  }
+
+  return new Date(now).toISOString();
+}
+async function getCurrentPositionAsync(options = {}){
+  return new Promise((resolve) => {
+    if(!navigator.geolocation){
+      resolve({ ok:false, error:'Geolocalizzazione non supportata dal dispositivo/browser.' });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({
+        ok:true,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        captured_at: safeGeoCapturedAt(pos.timestamp),
+        source:'browser_geolocation'
+      }),
+      (err) => resolve({ ok:false, error: err?.message || 'Impossibile ottenere la posizione.' }),
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 15000,
+        ...options
+      }
+    );
+  });
+}
+async function reverseGeocodeAsync(lat, lng){
+  if(lat == null || lng == null) return { ok:false, error:'Coordinate mancanti.' };
+  if(!navigator.onLine) return { ok:false, error:'Nessuna connessione disponibile per ricavare l\'indirizzo.' };
+  try{
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1&accept-language=it`;
+    const res = await fetch(url, {
+      method:'GET',
+      headers:{ 'Accept':'application/json' },
+      cache:'no-store'
+    });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const address = data?.display_name || null;
+    if(!address) return { ok:false, error:'Indirizzo non trovato.' };
+    return { ok:true, address, source:'reverse_geocoded_online' };
+  }catch(err){
+    console.warn('REVERSE GEOCODE ERROR:', err);
+    return { ok:false, error: err?.message || 'Errore reverse geocoding.' };
+  }
+}
+async function enrichGeoAddressForState(state){
+  if(!state?.ok || state.lat == null || state.lng == null) return state;
+  if(state.geo_address) return state;
+  if(!navigator.onLine){
+    return { ...state, geo_address:null, address_status:'offline_pending' };
+  }
+  const res = await reverseGeocodeAsync(state.lat, state.lng);
+  if(res.ok){
+    return {
+      ...state,
+      geo_address: res.address,
+      address_status:'resolved',
+      source: state.source || 'browser_geolocation'
+    };
+  }
+  return {
+    ...state,
+    geo_address: null,
+    address_status:'lookup_failed',
+    address_error: res.error || 'Indirizzo non disponibile'
+  };
+}
+async function captureMovementGeo(showToastOnError=false){
+  modalGeoState = { loading:true };
+  renderGeoStatus();
+  const geo = await getCurrentPositionAsync();
+  if(geo.ok){
+    modalGeoState = { ...geo, loading:false };
+    renderGeoStatus();
+    const enriched = await enrichGeoAddressForState(modalGeoState);
+    modalGeoState = { ...enriched, loading:false };
+  }else{
+    modalGeoState = { ok:false, loading:false, error:geo.error, source:'missing' };
+    if(showToastOnError) showToast('info', 'GPS non disponibile: operazione salvata senza geotag.');
+  }
+  renderGeoStatus();
+  return modalGeoState;
+}
+async function fillMissingGeoAddresses(limit=20){
+  if(geoAddressSyncInProgress || !navigator.onLine) return 0;
+  const rows = (db.movements || []).filter(m => m.geo_lat != null && m.geo_lng != null && !m.geo_address).slice(0, limit);
+  if(!rows.length) return 0;
+  geoAddressSyncInProgress = true;
+  let updated = 0;
+  try{
+    for(const row of rows){
+      const res = await reverseGeocodeAsync(row.geo_lat, row.geo_lng);
+      if(!res.ok || !res.address) continue;
+      const { error } = await sb.from('movements').update({ geo_address: res.address }).eq('id', row.id);
+      if(!error){
+        const local = db.movements.find(m => m.id === row.id);
+        if(local) local.geo_address = res.address;
+        updated++;
+      }else{
+        console.warn('GEO ADDRESS UPDATE ERROR:', error);
+      }
+    }
+    if(updated > 0) render();
+    return updated;
+  } finally {
+    geoAddressSyncInProgress = false;
+  }
 }
 
 function renderGlobalSearchBox(){
@@ -656,8 +840,8 @@ function renderAdminLogs(){
   return `<div class="panel">
     <div id="topAlertSlot">${renderAlert()}</div>
     ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
-    <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th></tr></thead><tbody>
-      ${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.created_at)}</td><td data-label="Tipo">${esc(movementLabel(m.movement_type))}</td><td data-label="Articolo">${esc(m.article_name)}</td><td data-label="Seriale">${esc(m.article_serial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.from_location_id))}</td><td data-label="A sede">${esc(getLocationName(m.to_location_id))}</td><td data-label="Da user">${esc(m.from_user_id?getUserName(m.from_user_id):'Home')}</td><td data-label="A user">${esc(m.to_user_id?getUserName(m.to_user_id):'Home')}</td><td data-label="Registrato da">${esc(m.recorded_by_user_id?getUserName(m.recorded_by_user_id):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td></tr>`).join('')}
+    <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th><th>GPS</th><th>Indirizzo</th></tr></thead><tbody>
+      ${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.created_at)}</td><td data-label="Tipo">${esc(movementLabel(m.movement_type))}</td><td data-label="Articolo">${esc(m.article_name)}</td><td data-label="Seriale">${esc(m.article_serial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.from_location_id))}</td><td data-label="A sede">${esc(getLocationName(m.to_location_id))}</td><td data-label="Da user">${esc(m.from_user_id?getUserName(m.from_user_id):'Home')}</td><td data-label="A user">${esc(m.to_user_id?getUserName(m.to_user_id):'Home')}</td><td data-label="Registrato da">${esc(m.recorded_by_user_id?getUserName(m.recorded_by_user_id):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td><td data-label="GPS">${m.geo_lat!=null && m.geo_lng!=null ? `<a href="https://maps.google.com/?q=${m.geo_lat},${m.geo_lng}" target="_blank" rel="noopener">${esc(formatGeoPoint(m.geo_lat, m.geo_lng))}</a>` : '-'}</td><td data-label="Indirizzo">${esc(m.geo_address || '-')}</td></tr>`).join('')}
     </tbody></table>
   </div>`;
 }
@@ -699,7 +883,7 @@ function adminLogin(){
 }
 function setAdminView(view){ currentView=view; render(); }
 function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
-function closeModal(){ $('#modal').classList.remove('open'); }
+function closeModal(){ $('#modal').classList.remove('open'); modalGeoState=null; modalImageData=null; }
 $('#modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeModal(); });
 
 function openPinModal(userId){
@@ -734,12 +918,23 @@ function openMovementModal(type){
     <label>Nota<textarea id="movementNote" placeholder="Nota facoltativa"></textarea></label>
     <label>Immagine (facoltativa, compressa automaticamente)<input type="file" accept="image/*" onchange="handleMovementImageChange(event)"></label>
     <div id="imgPreviewWrap"></div>
+    <div class="panel" style="margin-top:12px">
+      <h4 style="margin:0 0 8px 0">Geotag operazione</h4>
+      <div id="geoStatus"><span class="pill sync">Rilevazione posizione in corso...</span></div>
+      <div class="actions" style="margin-top:10px"><button type="button" onclick="captureMovementGeo(true)">Rileva di nuovo GPS</button></div>
+    </div>
     <div class="modal-actions"><button onclick="closeModal()">Annulla</button><button class="primary" onclick="confirmMovement('${type}')">Conferma</button></div>
   `);
+  modalGeoState = { loading:true };
+  renderGeoStatus();
+  captureMovementGeo(false);
 }
 
 async function confirmMovement(type){
   const note=$('#movementNote').value.trim(), targetUser=$('#targetUser')?.value||null, targetLocation=$('#targetLocation')?.value||null, articles=selectedArticleIds.map(findArticle).filter(Boolean);
+  if(!modalGeoState || modalGeoState.loading){
+    await captureMovementGeo(false);
+  }
   if(type==='passaggio'&&!targetUser){ showAlert('error','Seleziona il collega destinatario.'); closeModal(); return; }
   if(type==='trasferimento'&&!targetLocation){ showAlert('error','Seleziona la sede di destinazione.'); closeModal(); return; }
 
@@ -763,7 +958,13 @@ async function confirmMovement(type){
       recorded_by_user_id: currentUserId,
       note: note || '',
       image_data: modalImageData || null,
-      session_id: currentSessionId || ''
+      session_id: currentSessionId || '',
+      geo_lat: modalGeoState?.ok ? modalGeoState.lat : null,
+      geo_lng: modalGeoState?.ok ? modalGeoState.lng : null,
+      geo_accuracy_m: modalGeoState?.ok ? modalGeoState.accuracy : null,
+      geo_captured_at: modalGeoState?.ok ? modalGeoState.captured_at : nowIso(),
+      geo_source: modalGeoState?.ok ? (modalGeoState.source || 'browser_geolocation') : 'missing',
+      geo_address: modalGeoState?.ok ? (modalGeoState.geo_address || null) : null
     };
     let patch = {};
     if(type==='prelievo') patch = { state:'in_carico', current_holder_user_id:currentUserId, last_known_user_id:currentUserId, last_movement_at:nowIso(), last_note:note||'' };
@@ -779,7 +980,7 @@ async function confirmMovement(type){
 function openHistory(articleId){
   const article=findArticle(articleId), logs=db.movements.filter(m=>m.article_id===articleId);
   openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?`• ${esc(article.serial)}`:''}</p>
-    ${logs.length ? `<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th><th>Img</th></tr></thead><tbody>
+    ${logs.length ? `<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th><th>GPS</th><th>Indirizzo</th><th>Img</th></tr></thead><tbody>
       ${logs.map(log=>`<tr>
         <td data-label="Data">${formatDate(log.created_at)}</td>
         <td data-label="Tipo">${esc(movementLabel(log.movement_type))}</td>
@@ -789,6 +990,8 @@ function openHistory(articleId){
         <td data-label="A">${esc(log.to_user_id?getUserName(log.to_user_id):'Home')}</td>
         <td data-label="Registrato da">${esc(log.recorded_by_user_id?getUserName(log.recorded_by_user_id):'-')}</td>
         <td data-label="Nota">${esc(log.note||'-')}</td>
+        <td data-label="GPS">${log.geo_lat!=null && log.geo_lng!=null ? `<a href="https://maps.google.com/?q=${log.geo_lat},${log.geo_lng}" target="_blank" rel="noopener">${esc(formatGeoPoint(log.geo_lat, log.geo_lng))}</a><div class="small muted">${log.geo_accuracy_m!=null ? `± ${Math.round(log.geo_accuracy_m)} m` : ''}</div>` : `<span class="muted">Non disponibile</span>`}</td>
+        <td data-label="Indirizzo">${esc(log.geo_address || '-')}</td>
         <td data-label="Img">${log.image_data ? `<img src="${log.image_data}" class="preview-img" style="max-width:120px">` : '-'}</td>
       </tr>`).join('')}
     </tbody></table>` : `<div class="empty">Nessun movimento registrato.</div>`}
@@ -858,6 +1061,7 @@ window.addEventListener('online', async ()=>{
   renderSyncBadgeOnly();
   showAlert('ok','Connessione ripristinata. Avvio sincronizzazione coda offline.');
   await processOfflineQueue(true);
+  await fillMissingGeoAddresses(8);
   startOfflineRetryLoop();
 });
 window.addEventListener('offline', ()=>{
@@ -866,8 +1070,9 @@ window.addEventListener('offline', ()=>{
   startOfflineRetryLoop();
 });
 document.addEventListener('visibilitychange', async ()=>{
-  if(!document.hidden && queueCount() > 0 && navigator.onLine){
-    await processOfflineQueue(false);
+  if(!document.hidden && navigator.onLine){
+    if(queueCount() > 0) await processOfflineQueue(false);
+    await fillMissingGeoAddresses(8);
   }
 });
 window.saveToken = ()=>{};
