@@ -902,8 +902,11 @@ function renderAdminArticles(){
       <label>&nbsp;<button class="primary" onclick="createArticle()">Crea articolo</button></label>
     </div>
   </div>
-  <div class="panel"><table><thead><tr><th>Articolo</th><th>Seriale/Codice</th><th>Sede</th><th>Stato</th><th>Possessore</th><th>Azioni</th></tr></thead><tbody>
-      ${db.articles.filter(a=>a.active).map(a=>`<tr><td data-label="Articolo"><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')}</div></td><td data-label="Seriale/Codice">${esc(a.serial || a.internal_code || '-')}</td><td data-label="Sede">${esc(getLocationName(a.location_id))}</td><td data-label="Stato">${statePill(a)}</td><td data-label="Possessore">${esc(a.current_holder_user_id ? getUserName(a.current_holder_user_id) : 'Home')}</td><td data-label="Azioni" class="actions"><button onclick="openHistory('${a.id}')">Storico</button><button class="danger" onclick="deleteArticle('${a.id}')">Cancella</button></td></tr>`).join('')}
+  <div class="panel"><table><thead><tr><th>Articolo</th><th>Codice / Seriale</th><th>Sede</th><th>Stato</th><th>Possessore</th><th>Azioni</th></tr></thead><tbody>
+      ${db.articles.filter(a=>a.active).map(a=>`<tr><td data-label="Articolo"><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')}</div></td><td data-label="Codice / Seriale">${esc([
+        a.internal_code ? `Cod: ${a.internal_code}` : null,
+        a.serial ? `SN: ${a.serial}` : null
+      ].filter(Boolean).join(' • ') || '-')}</td><td data-label="Sede">${esc(getLocationName(a.location_id))}</td><td data-label="Stato">${statePill(a)}</td><td data-label="Possessore">${esc(a.current_holder_user_id ? getUserName(a.current_holder_user_id) : 'Home')}</td><td data-label="Azioni" class="actions"><button onclick="openHistory('${a.id}')">Storico</button><button class="danger" onclick="deleteArticle('${a.id}')">Cancella</button></td></tr>`).join('')}
     </tbody></table></div>`;
 }
 
