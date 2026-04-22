@@ -277,9 +277,79 @@ function statePill(a){
   return main + (mine ? ` ${mine}` : '');
 }
 function movementLabel(type){ return {prelievo:'Prelievo',restituzione:'Restituzione',passaggio:'Passaggio',trasferimento:'Trasferimento'}[type] || type; }
+function formatArticleCodes(a){
+  const parts = [];
+  if(a?.internal_code) parts.push(`Cod: ${a.internal_code}`);
+  if(a?.serial) parts.push(`SN: ${a.serial}`);
+  return parts.join(' • ') || '-';
+}
+function updateInputFocus(id, caret=null){
+  const el = document.getElementById(id);
+  if(!el) return;
+  const pos = Math.min(caret ?? el.value.length, el.value.length);
+  requestAnimationFrame(()=>{ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(e){} });
+}
+function updateGlobalSearchUI(caret=null){
+  const slot = document.getElementById('globalResultsSlot');
+  if(slot) slot.innerHTML = globalSearchTerm ? renderGlobalSearchResults() : '';
+  updateInputFocus('globalSearch', caret ?? globalSearchTerm.length);
+}
+function updateLocationArticleUI(caret=null){
+  const list = document.getElementById('locationArticlesList');
+  if(list && currentLocationId){
+    const articles = activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
+    list.innerHTML = filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`;
+  }
+  updateInputFocus('searchArticles', caret ?? locationSearchTerm.length);
+}
+function scrollToArticleRow(articleId){
+  const row = document.getElementById(`articleRow_${articleId}`);
+  if(row){
+    row.scrollIntoView({ behavior:'smooth', block:'center' });
+    row.classList.add('selected');
+  }
+}
+function openArticleDetail(articleId, warning=''){
+  const article = findArticle(articleId);
+  if(!article) return;
+  openModal(`
+    <h3>Dettaglio articolo</h3>
+    ${warning ? `<div class="alert show info" style="display:block">${esc(warning)}</div>` : ''}
+    <div class="panel" style="margin:12px 0 0 0">
+      <div><strong>${esc(article.name)}</strong></div>
+      <div class="small muted" style="margin-top:6px">${esc(article.category || '-')}</div>
+      <div class="small muted" style="margin-top:6px">${esc(formatArticleCodes(article))}</div>
+      <div class="small muted" style="margin-top:6px">Cantiere / sede: ${esc(getLocationName(article.location_id))}</div>
+      <div class="small muted" style="margin-top:6px">Possessore: ${esc(article.current_holder_user_id ? getUserName(article.current_holder_user_id) : 'Home')}</div>
+      <div style="margin-top:8px">${statePill(article)}</div>
+      <div class="small muted" style="margin-top:8px">Ultimo movimento: ${formatDate(article.last_movement_at)}</div>
+      <div class="small muted" style="margin-top:8px">Nota: ${esc(article.last_note || '-')}</div>
+    </div>
+    <div class="modal-actions">
+      <button onclick="openHistory('${article.id}')">Storico</button>
+      <button class="primary" onclick="closeModal()">Chiudi</button>
+    </div>`);
+}
+function handleSearchResultClick(articleId){
+  const article = findArticle(articleId);
+  if(!article) return;
+  if(currentUserId && currentLocationId){
+    if(article.location_id === currentLocationId){
+      selectedArticleIds = [article.id];
+      globalSearchTerm = '';
+      render();
+      setTimeout(()=>scrollToArticleRow(article.id), 60);
+      showAlert('ok', 'Articolo selezionato nel cantiere corrente.');
+      return;
+    }
+    openArticleDetail(article.id, 'Oggetto non in questo cantiere.');
+    return;
+  }
+  openArticleDetail(article.id);
+}
 
-function setGlobalSearch(v, caret=null){ globalSearchTerm=v; focusState={id:'globalSearch', caret: caret ?? v.length}; render(); }
-function setLocationSearch(v, caret=null){ locationSearchTerm=v; focusState={id:'searchArticles', caret: caret ?? v.length}; render(); }
+function setGlobalSearch(v, caret=null){ globalSearchTerm=v; focusState={id:'globalSearch', caret: caret ?? v.length}; updateGlobalSearchUI(caret ?? v.length); }
+function setLocationSearch(v, caret=null){ locationSearchTerm=v; focusState={id:'searchArticles', caret: caret ?? v.length}; updateLocationArticleUI(caret ?? v.length); }
 function restoreFocus(){
   if(!focusState) return;
   const el = document.getElementById(focusState.id);
@@ -673,20 +743,21 @@ function renderGlobalSearchBox(){
 function renderGlobalSearchResults(){
   const items = getSearchResults(globalSearchTerm);
   return `<div class="result-list" style="margin-top:12px">${items.length ? items.map(a=>`
-    <button class="result-card" type="button" onclick="openHistory('${a.id}')" style="text-align:left; width:100%;">
-      <strong>${esc(a.name)}</strong> ${a.serial?`<span class="badge">${esc(a.serial)}</span>`:''}
+    <button class="result-card" type="button" onclick="handleSearchResultClick('${a.id}')" style="text-align:left; width:100%;">
+      <strong>${esc(a.name)}</strong>
+      <div class="small muted" style="margin-top:6px">${esc(formatArticleCodes(a))}</div>
       <div class="small muted" style="margin-top:6px">Sede: ${esc(getLocationName(a.location_id))} • Possessore: ${esc(a.current_holder_user_id?getUserName(a.current_holder_user_id):'Home')}</div>
       <div style="margin-top:8px">${statePill(a)}</div>
       <div class="small muted" style="margin-top:8px">Ultimo movimento: ${formatDate(a.last_movement_at)}</div>
-      <div class="small" style="margin-top:8px;color:#1d4ed8;font-weight:700">Apri storico movimentazioni</div>
+      <div class="small" style="margin-top:8px;color:#1d4ed8;font-weight:700">${currentUserId && currentLocationId && a.location_id===currentLocationId ? 'Vai all\'articolo nel cantiere corrente' : 'Apri dettaglio articolo'}</div>
     </button>`).join('') : `<div class="empty">Nessun risultato.</div>`}</div>`;
 }
 
 function renderArticleRow(a){
   const selected=selectedArticleIds.includes(a.id);
-  return `<div class="article ${selected?'selected':''}">
+  return `<div class="article ${selected?'selected':''}" id="articleRow_${a.id}">
     <input type="checkbox" ${selected?'checked':''} onchange="toggleArticle('${a.id}')">
-    <div><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')} ${a.serial?'• '+esc(a.serial):''}</div></div>
+    <div><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')}</div><div class="small muted">${esc(formatArticleCodes(a))}</div></div>
     <div><div class="small muted">Stato</div>${statePill(a)}</div>
     <div><div class="small muted">Possessore</div>${esc(a.current_holder_user_id?getUserName(a.current_holder_user_id):'Home')}</div>
     <div><div class="small muted">Ultimo user</div>${esc(a.last_known_user_id?getUserName(a.last_known_user_id):'-')}</div>
@@ -720,7 +791,7 @@ function renderUserLanding(searchBox, results){
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="panel" style="margin-bottom:12px">
       <h3>Recap oggetti in carico a te</h3>
-      <div class="owned-list">${getOwnedArticles().length ? getOwnedArticles().map(a=>`<div class="owned-card"><strong>${esc(a.name)}</strong> ${a.serial?`<span class="badge">${esc(a.serial)}</span>`:''}<div class="small muted" style="margin-top:6px">Cantiere / sede: ${esc(getLocationName(a.location_id))}</div><div style="margin-top:8px">${statePill(a)}</div></div>`).join('') : `<div class="empty">Non hai oggetti in carico.</div>`}</div>
+      <div class="owned-list">${getOwnedArticles().length ? getOwnedArticles().map(a=>`<div class="owned-card"><strong>${esc(a.name)}</strong><div class="small muted" style="margin-top:6px">${esc(formatArticleCodes(a))}</div><div class="small muted" style="margin-top:6px">Cantiere / sede: ${esc(getLocationName(a.location_id))}</div><div style="margin-top:8px">${statePill(a)}</div></div>`).join('') : `<div class="empty">Non hai oggetti in carico.</div>`}</div>
     </div>
     <div class="panel">
       <h3>Selezione sede</h3>
@@ -736,7 +807,7 @@ function renderUserArticles(searchBox, results){
     ${renderTopbar(getLocationName(currentLocationId),'Seleziona uno o più articoli', `<button onclick="currentLocationId=null;selectedArticleIds=[];locationSearchTerm='';render()">Cambia sede</button><button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="actions" style="margin-bottom:12px"><label class="grow">Ricerca nel cantiere<input id="searchArticles" placeholder="Nome, codice o seriale" value="${esc(locationSearchTerm)}" oninput="setLocationSearch(this.value, this.selectionStart)"></label></div>
-    <div class="article-list">${filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`}</div>
+    <div class="article-list" id="locationArticlesList">${filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`}</div>
   </div>`;
 }
 
@@ -1053,7 +1124,7 @@ function exportLocationPdf(){
   const location = db.locations.find(l=>l.id===locationId);
   const articles = db.articles.filter(a=>a.location_id===locationId && a.active);
   const w = window.open('', '_blank');
-  w.document.write(`<!DOCTYPE html><html><head><title>Elenco materiale - ${esc(location.name)}</title><style>body{font-family:Arial;padding:20px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #ccc;padding:8px;text-align:left} h1{margin:0 0 10px 0} .m{color:#555}</style></head><body><h1>Elenco materiale - ${esc(location.name)}</h1><div class="m">Data export: ${new Date().toLocaleString('it-IT')}</div><table><thead><tr><th>Articolo</th><th>Categoria</th><th>Codice/Seriale</th><th>Stato</th><th>Possessore</th><th>Ultimo movimento</th></tr></thead><tbody>${articles.map(a=>`<tr><td>${esc(a.name)}</td><td>${esc(a.category||'-')}</td><td>${esc(a.serial||a.internal_code||'-')}</td><td>${a.state==='home'?'Home':'In carico'}</td><td>${esc(a.current_holder_user_id?getUserName(a.current_holder_user_id):'Home')}</td><td>${formatDate(a.last_movement_at)}</td></tr>`).join('')}</tbody></table></body></html>`);
+  w.document.write(`<!DOCTYPE html><html><head><title>Elenco materiale - ${esc(location.name)}</title><style>body{font-family:Arial;padding:20px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #ccc;padding:8px;text-align:left} h1{margin:0 0 10px 0} .m{color:#555}</style></head><body><h1>Elenco materiale - ${esc(location.name)}</h1><div class="m">Data export: ${new Date().toLocaleString('it-IT')}</div><table><thead><tr><th>Articolo</th><th>Categoria</th><th>Codice/Seriale</th><th>Stato</th><th>Possessore</th><th>Ultimo movimento</th></tr></thead><tbody>${articles.map(a=>`<tr><td>${esc(a.name)}</td><td>${esc(a.category||'-')}</td><td>${esc(formatArticleCodes(a))}</td><td>${a.state==='home'?'Home':'In carico'}</td><td>${esc(a.current_holder_user_id?getUserName(a.current_holder_user_id):'Home')}</td><td>${formatDate(a.last_movement_at)}</td></tr>`).join('')}</tbody></table></body></html>`);
   w.document.close(); w.focus(); w.print();
 }
 
@@ -1100,6 +1171,8 @@ window.exportLocationPdf=exportLocationPdf;
 window.handleMovementImageChange=handleMovementImageChange;
 window.setGlobalSearch=setGlobalSearch;
 window.setLocationSearch=setLocationSearch;
+window.handleSearchResultClick=handleSearchResultClick;
+window.openArticleDetail=openArticleDetail;
 
 initApp();
 </script>
