@@ -108,7 +108,7 @@ let offlineRetryTimer = null;
 
 let db = { users:[], locations:[], articles:[], movements:[] };
 let currentUserId=null, currentLocationId=null, adminLogged=false, currentView="home", selectedArticleIds=[], lastActivityAt=null, currentSessionId=null, alertState=null;
-let modalImageData=null, modalGeoState=null, geoAddressSyncInProgress=false, globalSearchTerm="", locationSearchTerm="", focusState=null, syncState="idle";
+let modalImageData=null, modalGeoState=null, geoAddressSyncInProgress=false, globalSearchTerm="", locationSearchTerm="", focusState=null, syncState="idle", lastScrollTop=0;
 let rtChannel = null;
 
 const $=s=>document.querySelector(s);
@@ -974,7 +974,16 @@ function userLogin(userId){
   currentUserId=userId; currentLocationId=null; currentSessionId=uid(); touchSession(); closeModal(); render();
 }
 function selectLocation(id){ currentLocationId=id; selectedArticleIds=[]; locationSearchTerm=''; render(); }
-function toggleArticle(id){ const idx=selectedArticleIds.indexOf(id); if(idx>=0) selectedArticleIds.splice(idx,1); else selectedArticleIds.push(id); render(); }
+function toggleArticle(id){
+  lastScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+  const idx=selectedArticleIds.indexOf(id);
+  if(idx>=0) selectedArticleIds.splice(idx,1);
+  else selectedArticleIds.push(id);
+  render();
+  requestAnimationFrame(()=>{
+    window.scrollTo({ top: lastScrollTop, behavior:'auto' });
+  });
+}
 
 function openMovementModal(type){
   if(!selectedArticleIds.length){ showAlert('error','Seleziona almeno un articolo.'); return; }
