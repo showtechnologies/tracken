@@ -264,7 +264,8 @@ function renderSyncBadgeOnly(){ document.querySelectorAll('[data-sync-badge]').f
 
 function getUserName(id){ const u=db.users.find(x=>x.id===id); return u ? u.name : '-'; }
 function getLocationName(id){ const l=db.locations.find(x=>x.id===id); return l ? l.name : '-'; }
-function activeUsers(){ return db.users.filter(u=>u.active && u.role==='user'); }
+function activeUsers(){ return db.users.filter(u=>u.active && (u.role==='user' || u.role==='admin')); }
+function currentUserIsAdmin(){ const u=db.users.find(x=>x.id===currentUserId); return !!u && u.role==='admin'; }
 function activeLocations(){ return db.locations.filter(l=>l.active); }
 function activeArticlesForLocation(id){ return db.articles.filter(a=>a.active && a.location_id===id); }
 function findArticle(id){ return db.articles.find(a=>a.id===id); }
@@ -773,7 +774,7 @@ function renderHome(searchBox, results){
     <div class="grid g2">
       <div class="panel" style="margin:0">
         <h3>Login admin</h3>
-        <div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" placeholder="Inserisci password"></label></div>
+        <div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" placeholder="Password" autocomplete="new-password"></label></div>
         <div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div>
       </div>
       <div class="panel" style="margin:0">
@@ -862,12 +863,18 @@ function renderAdminUsers(){
     <div class="grid g4">
       <label>Nome<input id="newUserName" placeholder="Es. Marco Neri"></label>
       <label>PIN<input id="newUserPin" placeholder="4 cifre"></label>
-      <label>Ruolo<select id="newUserRole"><option value="user">User</option><option value="admin">Admin</option></select></label>
+      <label>Ruolo<select id="newUserRole"><option value="user">User</option><option value="admin">Admin operativo</option></select></label>
       <label>&nbsp;<button class="primary" onclick="createUser()">Crea utente</button></label>
     </div>
+    <p class="small muted" style="margin-top:10px">Gli admin operativi accedono con PIN come gli altri utenti, ma possono movimentare con privilegi estesi.</p>
   </div>
-  <div class="panel"><table><thead><tr><th>Nome</th><th>Ruolo</th><th>Azioni</th></tr></thead><tbody>
-      ${db.users.map(u=>`<tr><td data-label="Nome">${esc(u.name)}</td><td data-label="Ruolo">${esc(u.role)}</td><td data-label="Azioni" class="actions"><button onclick="resetPin('${u.id}')">Reset PIN</button><button class="danger" onclick="deleteUser('${u.id}')">Cancella</button></td></tr>`).join('')}
+  <div class="panel"><table><thead><tr><th>Nome</th><th>Ruolo</th><th>Privilegi</th><th>Azioni</th></tr></thead><tbody>
+      ${db.users.map(u=>`<tr>
+        <td data-label="Nome">${esc(u.name)}</td>
+        <td data-label="Ruolo"><span class="badge">${u.role==='admin'?'Admin operativo':'User'}</span></td>
+        <td data-label="Privilegi"><select onchange="updateUserRole('${u.id}', this.value)"><option value="user" ${u.role==='user'?'selected':''}>User</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin operativo</option></select></td>
+        <td data-label="Azioni" class="actions"><button onclick="resetPin('${u.id}')">Reset PIN</button><button class="danger" onclick="deleteUser('${u.id}')">Cancella</button></td>
+      </tr>`).join('')}
     </tbody></table></div>`;
 }
 
@@ -1015,6 +1022,7 @@ function openMovementModal(type){
 
 async function confirmMovement(type){
   const note=$('#movementNote').value.trim(), targetUser=$('#targetUser')?.value||null, targetLocation=$('#targetLocation')?.value||null, articles=selectedArticleIds.map(findArticle).filter(Boolean);
+  const userIsAdmin = currentUserIsAdmin();
   if(!modalGeoState || modalGeoState.loading){
     await captureMovementGeo(false);
   }
@@ -1022,13 +1030,46 @@ async function confirmMovement(type){
   if(type==='trasferimento'&&!targetLocation){ showAlert('error','Seleziona la sede di destinazione.'); closeModal(); return; }
 
   for(const a of articles){
-    if(type==='prelievo' && a.state!=='home'){ showAlert('error',`Prelievo non consentito: ${a.name} non è disponibile in home.`); closeModal(); return; }
-    if(type==='restituzione' && a.state!=='in_carico'){ showAlert('error',`Restituzione non consentita: ${a.name} risulta già in home.`); closeModal(); return; }
-    if(type==='passaggio' && a.state!=='in_carico'){ showAlert('error',`Passaggio non consentito: ${a.name} deve essere prima preso in carico.`); closeModal(); return; }
-    if(type==='trasferimento' && a.state!=='home'){ showAlert('error',`Trasferimento non consentito: ${a.name} non è in home. Solo gli articoli in home possono essere spostati tra i cantieri.`); closeModal(); return; }
+    const heldByOther = a.current_holder_user_id && a.current_holder_user_id !== currentUserId;
+
+    if(type==='prelievo'){
+      if(a.state==='home'){
+        // Prelievo standard consentito a tutti.
+      }else if(a.state==='in_carico' && userIsAdmin){
+        // Admin operativo: può prendere in carico un oggetto anche se era già assegnato ad altro utente.
+      }else{
+        showAlert('error',`Prelievo non consentito: ${a.name} non è disponibile in home.`); closeModal(); return;
+      }
+    }
+
+    if(type==='restituzione'){
+      if(a.state!=='in_carico'){
+        showAlert('error',`Restituzione non consentita: ${a.name} risulta già in home.`); closeModal(); return;
+      }
+      if(heldByOther && !userIsAdmin){
+        showAlert('error',`Restituzione non consentita: ${a.name} è in carico a ${getUserName(a.current_holder_user_id)}.`); closeModal(); return;
+      }
+    }
+
+    if(type==='passaggio'){
+      if(a.state!=='in_carico'){
+        showAlert('error',`Passaggio non consentito: ${a.name} deve essere prima preso in carico.`); closeModal(); return;
+      }
+      if(heldByOther && !userIsAdmin){
+        showAlert('error',`Passaggio non consentito: ${a.name} è in carico a ${getUserName(a.current_holder_user_id)}.`); closeModal(); return;
+      }
+    }
+
+    if(type==='trasferimento'){
+      if(a.state!=='home' && !userIsAdmin){
+        showAlert('error',`Trasferimento non consentito: ${a.name} non è in home. Solo gli articoli in home possono essere spostati tra i cantieri.`); closeModal(); return;
+      }
+    }
   }
 
   for(const a of articles){
+    const sourceHolder = a.current_holder_user_id || null;
+    const transferKeepsHolder = type==='trasferimento' && a.state==='in_carico' && userIsAdmin;
     const movement = {
       article_id: a.id,
       article_name: a.name,
@@ -1036,8 +1077,8 @@ async function confirmMovement(type){
       movement_type: type,
       from_location_id: a.location_id,
       to_location_id: type==='trasferimento' ? targetLocation : a.location_id,
-      from_user_id: type==='prelievo' ? null : a.current_holder_user_id,
-      to_user_id: type==='prelievo' ? currentUserId : type==='passaggio' ? targetUser : null,
+      from_user_id: sourceHolder,
+      to_user_id: type==='prelievo' ? currentUserId : type==='passaggio' ? targetUser : transferKeepsHolder ? sourceHolder : null,
       recorded_by_user_id: currentUserId,
       note: note || '',
       image_data: modalImageData || null,
@@ -1053,11 +1094,15 @@ async function confirmMovement(type){
     if(type==='prelievo') patch = { state:'in_carico', current_holder_user_id:currentUserId, last_known_user_id:currentUserId, last_movement_at:nowIso(), last_note:note||'' };
     if(type==='restituzione') patch = { state:'home', current_holder_user_id:null, last_movement_at:nowIso(), last_note:note||'' };
     if(type==='passaggio') patch = { state:'in_carico', current_holder_user_id:targetUser, last_known_user_id:targetUser, last_movement_at:nowIso(), last_note:note||'' };
-    if(type==='trasferimento') patch = { location_id:targetLocation, state:'home', current_holder_user_id:null, last_movement_at:nowIso(), last_note:note||'' };
+    if(type==='trasferimento'){
+      patch = transferKeepsHolder
+        ? { location_id:targetLocation, state:'in_carico', current_holder_user_id:sourceHolder, last_known_user_id:sourceHolder, last_movement_at:nowIso(), last_note:note||'' }
+        : { location_id:targetLocation, state:'home', current_holder_user_id:null, last_movement_at:nowIso(), last_note:note||'' };
+    }
     const ok = await saveMovementAndArticle(a, movement, patch);
     if(!ok){ closeModal(); return; }
   }
-  selectedArticleIds=[]; closeModal(); showAlert('ok', `${movementLabel(type)} completato con successo.`); render();
+  selectedArticleIds=[]; closeModal(); showAlert('ok', movementLabel(type) + ' completato con successo.'); render();
 }
 
 function openHistory(articleId){
@@ -1093,6 +1138,12 @@ async function resetPin(id){
   const { error } = await sb.from('users').update({ pin_hash:hashPin(pin) }).eq('id', id);
   if(error) return showAlert('error', error.message);
   await fetchAllData(); render(); showAlert('ok','PIN aggiornato.');
+}
+async function updateUserRole(id, role){
+  if(!['user','admin'].includes(role)) return showAlert('error','Ruolo non valido.');
+  const { error } = await sb.from('users').update({ role }).eq('id', id);
+  if(error) return showAlert('error', error.message);
+  await fetchAllData(); render(); showAlert('ok', role==='admin' ? 'Privilegi admin assegnati.' : 'Privilegi admin rimossi.');
 }
 async function deleteUser(id){
   if(!confirm("ATTENZIONE: cancelli definitivamente l'utente?")) return;
@@ -1173,6 +1224,7 @@ window.closeModal=closeModal;
 window.setAdminView=setAdminView;
 window.createUser=createUser;
 window.resetPin=resetPin;
+window.updateUserRole=updateUserRole;
 window.deleteUser=deleteUser;
 window.createLocation=createLocation;
 window.deleteLocation=deleteLocation;
