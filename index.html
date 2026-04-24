@@ -774,7 +774,7 @@ function renderHome(searchBox, results){
     <div class="grid g2">
       <div class="panel" style="margin:0">
         <h3>Login admin</h3>
-        <div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" placeholder="Password" autocomplete="new-password"></label></div>
+        <div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" value="admin123"></label></div>
         <div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div>
       </div>
       <div class="panel" style="margin:0">
@@ -895,12 +895,14 @@ function renderAdminLocations(){
 }
 
 function renderAdminArticles(){
+  const articleNameSuggestions = [...new Set(db.articles.map(a => (a.name || '').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const categorySuggestions = [...new Set(db.articles.map(a => (a.category || '').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   return `<div class="panel">
     <div id="topAlertSlot">${renderAlert()}</div>
     ${renderTopbar('Attrezzature','Crea e cancella')}
     <div class="grid g4">
-      <label>Nome<input id="newArtName" placeholder="Es. Trapano Bosch"></label>
-      <label>Categoria<input id="newArtCategory" placeholder="Es. Trapani"></label>
+      <label>Nome<input id="newArtName" list="articleNameSuggestions" autocomplete="off" placeholder="Es. Trapano Bosch"></label>
+      <label>Categoria<input id="newArtCategory" list="categorySuggestions" autocomplete="off" placeholder="Es. Trapani"></label>
       <label>Codice interno<input id="newArtCode" placeholder="Es. TRP-009"></label>
       <label>Seriale<input id="newArtSerial" placeholder="Facoltativo"></label>
       <label>Sede iniziale<select id="newArtLoc">${activeLocations().map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>
@@ -908,6 +910,9 @@ function renderAdminArticles(){
       <label>Possessore iniziale<select id="newArtUser"><option value="">Nessuno</option>${activeUsers().map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></label>
       <label>&nbsp;<button class="primary" onclick="createArticle()">Crea articolo</button></label>
     </div>
+    <datalist id="articleNameSuggestions">${articleNameSuggestions.map(v=>`<option value="${esc(v)}"></option>`).join('')}</datalist>
+    <datalist id="categorySuggestions">${categorySuggestions.map(v=>`<option value="${esc(v)}"></option>`).join('')}</datalist>
+    <div class="small muted" style="margin-top:10px">Suggerimento: inizia a scrivere nome o categoria per riutilizzare valori già presenti. Puoi comunque inserire valori nuovi.</div>
   </div>
   <div class="panel"><table><thead><tr><th>Articolo</th><th>Codice / Seriale</th><th>Sede</th><th>Stato</th><th>Possessore</th><th>Azioni</th></tr></thead><tbody>
       ${db.articles.filter(a=>a.active).map(a=>`<tr><td data-label="Articolo"><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')}</div></td><td data-label="Codice / Seriale">${esc([
