@@ -101,7 +101,8 @@ const SUPABASE_URL = "https://ytmvwotpniiortfagjbl.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0bXZ3b3Rwbmlpb3J0ZmFnamJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTAyNDQsImV4cCI6MjA5MDEyNjI0NH0.dPkJcQGjJaedpicj1QARqzJjrWyGnXAui8I80FQNozs";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const ADMIN_USER="admin", ADMIN_PASSWORD="admin123", SESSION_TIMEOUT_MINUTES=20;
+const SESSION_TIMEOUT_MINUTES=20;
+let secureSession=null, pollingTimer=null, queueProcessing=false;
 const OFFLINE_QUEUE_KEY="tracken_supabase_offline_queue_v1";
 const OFFLINE_RETRY_MS = 5000;
 let offlineRetryTimer = null;
@@ -117,7 +118,37 @@ function uid(){ return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_
 function nowIso(){ return new Date().toISOString(); }
 function formatDate(iso){ return iso ? new Date(iso).toLocaleString('it-IT') : '-'; }
 function esc(v){ return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
-function hashPin(pin){ return btoa(`pin:${pin}:v1`); }
+async function api(action, body={}){
+  const {data,error}=await sb.rpc('tracken_api',{p_action:action,p_token:secureSession?.token||null,p_body:body});
+  if(error){ const e=new Error(error.message); e.network=!navigator.onLine || /fetch|network|Failed to fetch/i.test(error.message); throw e; }
+  if(data?.error){ const e=new Error(data.error); e.business=true; if(data.auth_required) await logoutAll(false); throw e; }
+  return data;
+}
+function safeImage(value){ return typeof value==='string' && value.length<=1500000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ? value : ''; }
+function expectedArticle(a){ return {state:a.state,holder:a.current_holder_user_id||null,location:a.location_id||null,last_movement_at:a.last_movement_at||null}; }
+function sessionValid(){ return !!secureSession && Date.now()<Date.parse(secureSession.expires_at); }
+async function acceptSession(result){
+ secureSession=result; currentUserId=result.user.id; adminLogged=!!result.user.manager; currentView=adminLogged?'admin_dashboard':'home'; currentSessionId=uid(); touchSession();
+ await fetchAllData(); subscribeRealtime(); render();
+}
+let authBusy=false;
+async function submitAccess(action){
+ if(authBusy) return;
+ const name=$('#loginName').value.trim(), pin=$('#loginPin').value, code=$('#activationCode').value.trim();
+ if(!name) return showAlert('error','Inserisci il nome utente, ad esempio SACHA.');
+ if(!/^[0-9]{8,12}$/.test(pin)) return showAlert('error','Il PIN deve contenere da 8 a 12 cifre, solo numeri.');
+ if(action==='activate' && !code) return showAlert('error','Inserisci il codice di attivazione ricevuto.');
+ if(action==='login' && code) return showAlert('error','Per usare il codice premi Attiva accesso, sotto il codice.');
+ authBusy=true;
+ const buttons=[...document.querySelectorAll('#app button')];
+ buttons.forEach(b=>b.disabled=true);
+ showAlert('info','Verifica in corso…');
+ try { await acceptSession(await api(action,{name,pin,...(action==='activate'?{code}:{})})); }
+ catch(e){ showAlert('error',e.message); }
+ finally { authBusy=false; buttons.forEach(b=>b.disabled=false); }
+}
+async function activateAccess(){ await submitAccess('activate'); }
+
 function touchSession(){ lastActivityAt = nowIso(); }
 function getOfflineQueue(){
   try{ return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]"); }catch(e){ return []; }
@@ -154,8 +185,9 @@ function removeQueuedOperation(localId){
   if(!queue.length) stopOfflineRetryLoop();
 }
 async function processOfflineQueue(showMessage=true){
-  const queue = getOfflineQueue();
-  if(!queue.length || !navigator.onLine) return false;
+  const queue = getOfflineQueue().filter(op=>op.recorded_by_user_id===currentUserId);
+  if(!queue.length || !navigator.onLine || !sessionValid() || queueProcessing) return false;
+  queueProcessing=true;
 
   syncState = "syncing";
   renderSyncBadgeOnly();
@@ -166,7 +198,7 @@ async function processOfflineQueue(showMessage=true){
     for(const op of [...queue]){
       let ok = false;
       try{
-        if(op.kind === 'movement'){
+        if(op.kind === 'movement' && op.operation_id && op.expected){
           updateProgress(`Coda offline: ${processed+1} / ${queue.length}`, Math.round(18 + ((processed+1)/queue.length)*60), 'Invio operazione al database.');
           ok = await commitMovementOperation(op, false, true);
         }
@@ -203,12 +235,17 @@ async function processOfflineQueue(showMessage=true){
 
     return processed > 0;
   } finally {
+    queueProcessing=false;
     setTimeout(hideProgress, 350);
   }
 }
 function sessionExpired(){ if(!lastActivityAt) return false; return (Date.now() - new Date(lastActivityAt).getTime()) > SESSION_TIMEOUT_MINUTES*60*1000; }
-function ensureSession(){ if(sessionExpired()) logoutAll(); }
-function logoutAll(){ currentUserId=null; currentLocationId=null; adminLogged=false; currentView='home'; selectedArticleIds=[]; currentSessionId=null; lastActivityAt=null; render(); }
+function ensureSession(){ if(secureSession && (!sessionValid() || sessionExpired())) logoutAll(false); }
+async function logoutAll(notifyServer=true){
+ const token=secureSession?.token; secureSession=null; stopOfflineRetryLoop(); clearInterval(pollingTimer); pollingTimer=null;
+ currentUserId=null; currentLocationId=null; adminLogged=false; currentView='home'; selectedArticleIds=[]; currentSessionId=null; lastActivityAt=null; globalSearchTerm=''; db={users:[],locations:[],articles:[],movements:[]}; render();
+ if(notifyServer && token) await sb.rpc('tracken_api',{p_action:'logout',p_token:token,p_body:{}});
+}
 
 function showToast(type,msg){
   const wrap = document.getElementById("toastWrap");
@@ -224,7 +261,7 @@ function showAlert(type,msg){
   alertState = {type, message: msg};
   renderAlertOnly();
   showToast(type,msg);
-  setTimeout(()=>{ alertState=null; renderAlertOnly(); }, 2200);
+  if(type!=='error') { const shown=alertState; setTimeout(()=>{ if(alertState===shown){ alertState=null; renderAlertOnly(); } }, 2200); }
 }
 function renderAlert(){ return !alertState ? '' : `<div class="alert show ${alertState.type}">${esc(alertState.message)}</div>`; }
 function renderAlertOnly(){ const slot = document.getElementById("topAlertSlot"); if(slot) slot.innerHTML = renderAlert(); }
@@ -373,54 +410,17 @@ function filterArticlesForUI(articles){
 }
 
 async function fetchAllData(){
-  syncState='syncing'; renderSyncBadgeOnly();
-  const [{data:users,error:eu},{data:locations,error:el},{data:articles,error:ea},{data:movements,error:em}] = await Promise.all([
-    sb.from('users').select('*').order('name'),
-    sb.from('locations').select('*').order('name'),
-    sb.from('articles').select('*').order('name'),
-    sb.from('movements').select('*').order('created_at',{ascending:false}).limit(300)
-  ]);
-  if(eu||el||ea||em){
-    console.error({eu,el,ea,em});
-    syncState='error';
-    renderSyncBadgeOnly();
-    showAlert('error','Errore caricamento dati da Supabase.');
-    return false;
-  }
-  db = { users:users||[], locations:locations||[], articles:articles||[], movements:movements||[] };
-  syncState='idle';
-  renderSyncBadgeOnly();
-  return true;
+ if(!sessionValid()) return false;
+ try { const data=await api('data'); db={users:data.users,locations:data.locations,articles:data.articles,movements:data.movements}; if(!data.user.manager) adminLogged=false; syncState='idle'; renderSyncBadgeOnly(); return true; }
+ catch(e){ syncState='error'; showAlert('error',e.message); return false; }
 }
 
 function subscribeRealtime(){
-  if(rtChannel) return;
-  rtChannel = sb.channel('tracken-app-live')
-    .on('postgres_changes', { event:'*', schema:'public', table:'articles' }, async ()=>{ await fetchAllData(); render(); })
-    .on('postgres_changes', { event:'*', schema:'public', table:'movements' }, async ()=>{ await fetchAllData(); render(); })
-    .on('postgres_changes', { event:'*', schema:'public', table:'users' }, async ()=>{ await fetchAllData(); render(); })
-    .on('postgres_changes', { event:'*', schema:'public', table:'locations' }, async ()=>{ await fetchAllData(); render(); })
-    .subscribe((status)=>console.log('Realtime:', status));
+ if(pollingTimer) return;
+ pollingTimer=setInterval(async()=>{ if(sessionValid() && navigator.onLine && !queueProcessing){ await fetchAllData(); render(); } },30000);
 }
 
-async function initApp(){
-  try{
-    showProgress('Avvio applicazione...', 'Caricamento dati da Supabase.', 'Connessione al database', 20);
-    const ok = await fetchAllData();
-    updateProgress('Attivazione realtime', 60);
-    if(ok){
-      subscribeRealtime();
-      updateProgress('Verifica coda offline', 82);
-      await processOfflineQueue(false);
-      await fillMissingGeoAddresses(8);
-    }
-    startOfflineRetryLoop();
-    updateProgress('Aggiornamento schermata', 96);
-    render();
-  } finally {
-    setTimeout(hideProgress, 250);
-  }
-}
+async function initApp(){ render(); hideProgress(); }
 
 function applyLocalMovementState(articleId, movement, articlePatch){
   const article = db.articles.find(a=>a.id===articleId);
@@ -450,60 +450,26 @@ function applyLocalMovementState(articleId, movement, articlePatch){
   });
 }
 async function commitMovementOperation(op, refreshAfter=true, fromQueue=false){
-  syncState='syncing'; renderSyncBadgeOnly();
-  showProgress(fromQueue ? 'Sincronizzazione coda offline...' : 'Registrazione operazione...', 'Sto salvando i dati sul database.', 'Registrazione movimento', 28);
-  try{
-    const movementPayload = {
-      article_id: op.article_id,
-      article_name: op.article_name,
-      article_serial: op.article_serial || '',
-      movement_type: op.movement_type,
-      from_location_id: op.from_location_id,
-      to_location_id: op.to_location_id,
-      from_user_id: op.from_user_id,
-      to_user_id: op.to_user_id,
-      recorded_by_user_id: op.recorded_by_user_id,
-      note: op.note || '',
-      image_data: op.image_data || null,
-      session_id: op.session_id || '',
-      geo_lat: op.geo_lat ?? null,
-      geo_lng: op.geo_lng ?? null,
-      geo_accuracy_m: op.geo_accuracy_m ?? null,
-      geo_captured_at: op.geo_captured_at ?? null,
-      geo_source: op.geo_source || null,
-      geo_address: op.geo_address || null
-    };
-    const { error: e1 } = await sb.from('movements').insert(movementPayload);
-    if(e1){
-      syncState='error'; renderSyncBadgeOnly();
-      console.error(e1);
-      if(!fromQueue) showAlert('error', `Errore salvataggio movimento: ${e1.message}`);
-      return false;
-    }
-    updateProgress('Aggiornamento stato articolo', 62, 'Movimento registrato. Aggiorno lo stato attuale dell’articolo.');
-    const { error: e2 } = await sb.from('articles').update(op.article_patch).eq('id', op.article_id);
-    if(e2){
-      syncState='error'; renderSyncBadgeOnly();
-      console.error(e2);
-      if(!fromQueue) showAlert('error', `Movimento salvato ma stato articolo non aggiornato: ${e2.message}`);
-      return false;
-    }
-    if(refreshAfter){
-      updateProgress('Aggiornamento schermata', 86, 'Ricarico i dati più recenti.');
-      await fetchAllData();
-      render();
-    } else {
-      renderSyncBadgeOnly();
-    }
-    updateProgress('Completato', 100, 'Operazione completata.');
-    return true;
-  } finally {
-    setTimeout(hideProgress, 350);
-  }
+ if(!sessionValid()) { showAlert('error','Accedi nuovamente per sincronizzare.'); return false; }
+ if(op.recorded_by_user_id!==currentUserId) { showAlert('error','Operazione appartenente a un altro utente.'); return false; }
+ syncState='syncing'; renderSyncBadgeOnly();
+ try {
+  if(!op.operation_id || !op.expected) throw Object.assign(new Error('Operazione precedente all’aggiornamento: ricreala dopo aver verificato lo storico.'),{business:true});
+  const body={previous_operation:op.previous_operation||null,operation_id:op.operation_id,article_id:op.article_id,expected:op.expected,movement_type:op.movement_type,to_user_id:op.to_user_id,to_location_id:op.to_location_id,note:op.note,image_data:op.image_data,geo_lat:op.geo_lat,geo_lng:op.geo_lng,geo_accuracy_m:op.geo_accuracy_m,geo_captured_at:op.geo_captured_at,geo_address:op.geo_address};
+  const result=await api('movement',body);
+  if(result.article){ const a=db.articles.find(x=>x.id===result.article.id); if(a) Object.assign(a,result.article); }
+  if(refreshAfter) { await fetchAllData(); render(); }
+  syncState='idle'; return true;
+ } catch(e){ syncState='error'; if(e.business){showAlert('error',e.message); return false;} throw e; }
+ finally {hideProgress(); renderSyncBadgeOnly();}
 }
+
 async function saveMovementAndArticle(article, movement, articlePatch){
   const op = {
     kind:'movement',
+    operation_id:uid(),
+    expected:expectedArticle(article),
+    previous_operation:getOfflineQueue().filter(x=>x.article_id===article.id && x.recorded_by_user_id===currentUserId).at(-1)?.operation_id||null,
     article_id: article.id,
     article_name: movement.article_name,
     article_serial: movement.article_serial || '',
@@ -525,11 +491,14 @@ async function saveMovementAndArticle(article, movement, articlePatch){
     article_patch: articlePatch
   };
 
+  if(!sessionValid()){showAlert('error','Accedi nuovamente prima di registrare movimenti.');return false;}
+  if(op.previous_operation){applyLocalMovementState(article.id,movement,articlePatch);queueOperation(op);render();return true;}
   try{
     const ok = await commitMovementOperation(op, true, false);
     if(ok) return true;
-    throw new Error("Commit fallito");
+    return false;
   }catch(err){
+    if(!sessionValid() || err.business || (!err.network && navigator.onLine)){ showAlert('error',err.message); return false; }
     console.warn("OFFLINE MODE ATTIVO:", err);
     showProgress('Registrazione offline...', 'Nessuna connessione disponibile.', 'Salvataggio in coda locale', 55);
     applyLocalMovementState(article.id, movement, articlePatch);
@@ -712,31 +681,7 @@ async function captureMovementGeo(showToastOnError=false){
   renderGeoStatus();
   return modalGeoState;
 }
-async function fillMissingGeoAddresses(limit=20){
-  if(geoAddressSyncInProgress || !navigator.onLine) return 0;
-  const rows = (db.movements || []).filter(m => m.geo_lat != null && m.geo_lng != null && !m.geo_address).slice(0, limit);
-  if(!rows.length) return 0;
-  geoAddressSyncInProgress = true;
-  let updated = 0;
-  try{
-    for(const row of rows){
-      const res = await reverseGeocodeAsync(row.geo_lat, row.geo_lng);
-      if(!res.ok || !res.address) continue;
-      const { error } = await sb.from('movements').update({ geo_address: res.address }).eq('id', row.id);
-      if(!error){
-        const local = db.movements.find(m => m.id === row.id);
-        if(local) local.geo_address = res.address;
-        updated++;
-      }else{
-        console.warn('GEO ADDRESS UPDATE ERROR:', error);
-      }
-    }
-    if(updated > 0) render();
-    return updated;
-  } finally {
-    geoAddressSyncInProgress = false;
-  }
-}
+async function fillMissingGeoAddresses(){ return 0; }
 
 function renderGlobalSearchBox(){
   return `<label class="grow">Cerca oggetto, seriale, utente o cantiere<input id="globalSearch" placeholder="Es. trapano, SN7781, Recco..." value="${esc(globalSearchTerm)}" oninput="setGlobalSearch(this.value, this.selectionStart)"></label>`;
@@ -766,29 +711,14 @@ function renderArticleRow(a){
   </div>`;
 }
 
-function renderHome(searchBox, results){
-  return `<div class="panel">
-    <div id="topAlertSlot">${renderAlert()}</div>
-    ${renderTopbar('Tracken - Supabase','Lettura realtime e coda offline attive', `<span data-sync-badge>${renderSyncBadge()}</span>`)}
-    <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
-    <div class="grid g2">
-      <div class="panel" style="margin:0">
-        <h3>Login admin</h3>
-        <div class="grid g2"><label>Username<input id="adminUser" value="admin"></label><label>Password<input id="adminPass" type="password" placeholder="Password"></label></div>
-        <div class="actions" style="margin-top:12px"><button class="primary" onclick="adminLogin()">Accedi come admin</button></div>
-      </div>
-      <div class="panel" style="margin:0">
-        <h3>Operatori</h3>
-        <div class="tilegrid">${activeUsers().map(u=>`<button class="tile" onclick="openPinModal('${u.id}')"><strong>${esc(u.name)}</strong><div class="muted small">Tocca e inserisci il PIN</div></button>`).join('')}</div>
-      </div>
-    </div>
-  </div>`;
+function renderHome(){
+ return `<div class="panel"><div id="topAlertSlot">${renderAlert()}</div>${renderTopbar('Tracken','Accesso protetto')}<label>Nome utente<input id="loginName" autocomplete="username"></label><label>PIN personale<input id="loginPin" type="password" inputmode="numeric" minlength="8" maxlength="12" autocomplete="current-password"></label><div class="actions"><button class="primary" onclick="adminLogin()">Accedi</button></div><details style="margin-top:20px"><summary>Primo accesso / reimpostazione PIN</summary><p>Inserisci il codice monouso ricevuto dal gestore e scegli un nuovo PIN di 8–12 cifre nel campo sopra.</p><label>Codice di attivazione<input id="activationCode" autocomplete="off"></label><button onclick="activateAccess()">Attiva accesso</button></details></div>`;
 }
 
 function renderUserLanding(searchBox, results){
   return `<div class="panel">
     <div id="topAlertSlot">${renderAlert()}</div>
-    ${renderTopbar('Benvenuto','Seleziona un cantiere oppure controlla cosa hai già in carico', `<button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
+    ${renderTopbar('Benvenuto','Seleziona un cantiere oppure controlla cosa hai già in carico', `${secureSession?.user?.manager ? `<button onclick="adminLogged=true;render()">Gestione</button>` : ''}<button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="panel" style="margin-bottom:12px">
       <h3>Recap oggetti in carico a te</h3>
@@ -805,7 +735,7 @@ function renderUserArticles(searchBox, results){
   const articles=activeArticlesForLocation(currentLocationId).sort((a,b)=>a.name.localeCompare(b.name));
   return `<div class="panel">
     <div id="topAlertSlot">${renderAlert()}</div>
-    ${renderTopbar(getLocationName(currentLocationId),'Seleziona uno o più articoli', `<button onclick="currentLocationId=null;selectedArticleIds=[];locationSearchTerm='';render()">Cambia sede</button><button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
+    ${renderTopbar(getLocationName(currentLocationId),'Seleziona uno o più articoli', `<button onclick="currentLocationId=null;selectedArticleIds=[];locationSearchTerm='';render()">Cambia sede</button>${secureSession?.user?.manager ? `<button onclick="adminLogged=true;render()">Gestione</button>` : ''}<button class="danger" onclick="logoutAll()">Logout</button><span class="badge">${esc(getUserName(currentUserId))}</span> <span data-sync-badge>${renderSyncBadge()}</span>`)}
     <div class="panel" style="margin-bottom:12px">${searchBox}<div id="globalResultsSlot">${results}</div></div>
     <div class="actions" style="margin-bottom:12px"><label class="grow">Ricerca nel cantiere<input id="searchArticles" placeholder="Nome, codice o seriale" value="${esc(locationSearchTerm)}" oninput="setLocationSearch(this.value, this.selectionStart)"></label></div>
     <div class="article-list" id="locationArticlesList">${filterArticlesForUI(articles).map(renderArticleRow).join('') || `<div class="empty">Nessun articolo trovato.</div>`}</div>
@@ -823,7 +753,7 @@ function renderStickyActions(){
 
 function renderAdminSidebar(){
   return `<div class="sidebar">
-    <h3>Area admin</h3>
+    <h3>Area gestione</h3><button onclick="adminLogged=false; currentView='home'; render()">Area operativa</button>
     <div class="nav">
       <button class="${currentView==='admin_dashboard'?'active':''}" onclick="setAdminView('admin_dashboard')">Dashboard</button>
       <button class="${currentView==='admin_users'?'active':''}" onclick="setAdminView('admin_users')">Utenti</button>
@@ -859,10 +789,10 @@ function renderAdminDashboard(){
 function renderAdminUsers(){
   return `<div class="panel">
     <div id="topAlertSlot">${renderAlert()}</div>
-    ${renderTopbar('Utenti','Crea, modifica e cancella')}
+    ${renderTopbar('Utenti','Crea, modifica e disattiva')}
     <div class="grid g4">
       <label>Nome<input id="newUserName" placeholder="Es. Marco Neri"></label>
-      <label>PIN<input id="newUserPin" placeholder="4 cifre"></label>
+      <p>Il nuovo utente sceglierà il PIN tramite un codice monouso.</p>
       <label>Ruolo<select id="newUserRole"><option value="user">User</option><option value="admin">Admin operativo</option></select></label>
       <label>&nbsp;<button class="primary" onclick="createUser()">Crea utente</button></label>
     </div>
@@ -873,7 +803,7 @@ function renderAdminUsers(){
         <td data-label="Nome">${esc(u.name)}</td>
         <td data-label="Ruolo"><span class="badge">${u.role==='admin'?'Admin operativo':'User'}</span></td>
         <td data-label="Privilegi"><select onchange="updateUserRole('${u.id}', this.value)"><option value="user" ${u.role==='user'?'selected':''}>User</option><option value="admin" ${u.role==='admin'?'selected':''}>Admin operativo</option></select></td>
-        <td data-label="Azioni" class="actions"><button onclick="resetPin('${u.id}')">Reset PIN</button><button class="danger" onclick="deleteUser('${u.id}')">Cancella</button></td>
+        <td data-label="Azioni" class="actions"><button onclick="resetPin('${u.id}')">Reset PIN</button><button class="danger" onclick="deleteUser('${u.id}')">Disattiva</button></td>
       </tr>`).join('')}
     </tbody></table></div>`;
 }
@@ -890,7 +820,7 @@ function renderAdminLocations(){
     </div>
   </div>
   <div class="panel"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Azioni</th></tr></thead><tbody>
-      ${db.locations.map(l=>`<tr><td data-label="Nome">${esc(l.name)}</td><td data-label="Tipo">${esc(l.type)}</td><td data-label="Azioni" class="actions"><button class="danger" onclick="deleteLocation('${l.id}')">Cancella</button></td></tr>`).join('')}
+      ${db.locations.map(l=>`<tr><td data-label="Nome">${esc(l.name)}</td><td data-label="Tipo">${esc(l.type)}</td><td data-label="Azioni" class="actions"><button class="danger" onclick="deleteLocation('${l.id}')">Disattiva</button></td></tr>`).join('')}
     </tbody></table></div>`;
 }
 
@@ -918,7 +848,7 @@ function renderAdminArticles(){
       ${db.articles.filter(a=>a.active).map(a=>`<tr><td data-label="Articolo"><strong>${esc(a.name)}</strong><div class="small muted">${esc(a.category||'-')}</div></td><td data-label="Codice / Seriale">${esc([
         a.internal_code ? `Cod: ${a.internal_code}` : null,
         a.serial ? `SN: ${a.serial}` : null
-      ].filter(Boolean).join(' • ') || '-')}</td><td data-label="Sede">${esc(getLocationName(a.location_id))}</td><td data-label="Stato">${statePill(a)}</td><td data-label="Possessore">${esc(a.current_holder_user_id ? getUserName(a.current_holder_user_id) : 'Home')}</td><td data-label="Azioni" class="actions"><button onclick="openHistory('${a.id}')">Storico</button><button class="danger" onclick="deleteArticle('${a.id}')">Cancella</button></td></tr>`).join('')}
+      ].filter(Boolean).join(' • ') || '-')}</td><td data-label="Sede">${esc(getLocationName(a.location_id))}</td><td data-label="Stato">${statePill(a)}</td><td data-label="Possessore">${esc(a.current_holder_user_id ? getUserName(a.current_holder_user_id) : 'Home')}</td><td data-label="Azioni" class="actions"><button onclick="openHistory('${a.id}')">Storico</button><button class="danger" onclick="deleteArticle('${a.id}')">Disattiva</button></td></tr>`).join('')}
     </tbody></table></div>`;
 }
 
@@ -962,11 +892,8 @@ function render(){
   restoreFocus();
 }
 
-function adminLogin(){
-  const u=$('#adminUser').value.trim(), p=$('#adminPass').value;
-  if(u!==ADMIN_USER || p!==ADMIN_PASSWORD){ showAlert('error','Credenziali admin non valide.'); return; }
-  adminLogged=true; currentView='admin_dashboard'; currentSessionId=uid(); touchSession(); render();
-}
+async function adminLogin(){ await submitAccess('login'); }
+
 function setAdminView(view){ currentView=view; render(); }
 function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
 function closeModal(){ $('#modal').classList.remove('open'); modalGeoState=null; modalImageData=null; }
@@ -980,11 +907,8 @@ function openPinModal(userId){
     <div class="modal-actions"><button onclick="closeModal()">Annulla</button><button class="primary" onclick="userLogin('${userId}')">Entra</button></div>`);
 }
 function pinKey(k){ const i=$('#pinInput'); if(!i) return; if(k==='C') i.value=''; else if(k==='←') i.value=i.value.slice(0,-1); else i.value += k; }
-function userLogin(userId){
-  const pin=$('#pinInput').value, user=db.users.find(u=>u.id===userId);
-  if(user.pin_hash !== hashPin(pin)){ showAlert('error','PIN non valido.'); closeModal(); return; }
-  currentUserId=userId; currentLocationId=null; currentSessionId=uid(); touchSession(); closeModal(); render();
-}
+async function userLogin(){ await adminLogin(); }
+
 function selectLocation(id){ currentLocationId=id; selectedArticleIds=[]; locationSearchTerm=''; render(); }
 function toggleArticle(id){
   lastScrollTop = window.scrollY || document.documentElement.scrollTop || 0;
@@ -1125,67 +1049,33 @@ function openHistory(articleId){
         <td data-label="Nota">${esc(log.note||'-')}</td>
         <td data-label="GPS">${log.geo_lat!=null && log.geo_lng!=null ? `<a href="https://maps.google.com/?q=${log.geo_lat},${log.geo_lng}" target="_blank" rel="noopener">${esc(formatGeoPoint(log.geo_lat, log.geo_lng))}</a><div class="small muted">${log.geo_accuracy_m!=null ? `± ${Math.round(log.geo_accuracy_m)} m` : ''}</div>` : `<span class="muted">Non disponibile</span>`}</td>
         <td data-label="Indirizzo">${esc(log.geo_address || '-')}</td>
-        <td data-label="Img">${log.image_data ? `<img src="${log.image_data}" class="preview-img" style="max-width:120px">` : '-'}</td>
+        <td data-label="Img">${log.image_data ? `<img src="${safeImage(log.image_data)}" class="preview-img" style="max-width:120px">` : '-'}</td>
       </tr>`).join('')}
     </tbody></table>` : `<div class="empty">Nessun movimento registrato.</div>`}
     <div class="modal-actions"><button class="primary" onclick="closeModal()">Chiudi</button></div>`);
 }
 
 async function createUser(){
-  const name=$('#newUserName').value.trim(), pin=$('#newUserPin').value.trim(), role=$('#newUserRole').value;
-  if(!name || !pin){ showAlert('error','Inserisci nome e PIN.'); return; }
-  const { error } = await sb.from('users').insert({ name, pin_hash:hashPin(pin), role, active:true });
-  if(error) return showAlert('error', error.message);
-  await fetchAllData(); render(); showAlert('ok','Utente creato.');
+ try { const d=await api('create_user',{name:$('#newUserName').value.trim(),role:$('#newUserRole').value}); showActivationCode(d.activation_code); await fetchAllData(); render(); } catch(e){showAlert('error',e.message);}
 }
+function showActivationCode(code){ openModal(`<h3>Codice monouso</h3><p>Valido per 24 ore. Consegnalo solo alla persona interessata tramite un canale privato.</p><textarea readonly>${esc(code)}</textarea><button onclick="closeModal()">Chiudi</button>`); }
+
 async function resetPin(id){
-  const pin=prompt('Nuovo PIN:'); if(!pin) return;
-  const { error } = await sb.from('users').update({ pin_hash:hashPin(pin) }).eq('id', id);
-  if(error) return showAlert('error', error.message);
-  await fetchAllData(); render(); showAlert('ok','PIN aggiornato.');
+ if(!confirm('Revocare le sessioni e generare un nuovo codice di attivazione?')) return;
+ try {const d=await api('reset_user',{id}); showActivationCode(d.activation_code);}catch(e){showAlert('error',e.message);}
 }
-async function updateUserRole(id, role){
-  if(!['user','admin'].includes(role)) return showAlert('error','Ruolo non valido.');
-  const { error } = await sb.from('users').update({ role }).eq('id', id);
-  if(error) return showAlert('error', error.message);
-  await fetchAllData(); render(); showAlert('ok', role==='admin' ? 'Privilegi admin assegnati.' : 'Privilegi admin rimossi.');
-}
-async function deleteUser(id){
-  if(!confirm("ATTENZIONE: cancelli definitivamente l'utente?")) return;
-  await sb.from('articles').update({ current_holder_user_id:null }).eq('current_holder_user_id', id);
-  await sb.from('articles').update({ last_known_user_id:null }).eq('last_known_user_id', id);
-  const { error } = await sb.from('users').delete().eq('id', id);
-  if(error) return showAlert('error', error.message);
-  await fetchAllData(); render(); showAlert('ok','Utente cancellato.');
-}
-async function createLocation(){
-  const name=$('#newLocName').value.trim(), type=$('#newLocType').value, notes=$('#newLocNotes').value.trim();
-  if(!name) return showAlert('error','Inserisci il nome della sede.');
-  const { error } = await sb.from('locations').insert({ name, type, notes, active:true });
-  if(error) return showAlert('error', error.message);
-  await fetchAllData(); render(); showAlert('ok','Sede creata.');
-}
-async function deleteLocation(id){
-  if(db.articles.some(a=>a.location_id===id && a.active)){ return showAlert('error','Non puoi cancellare una sede che contiene articoli attivi.'); }
-  if(!confirm("ATTENZIONE: cancelli definitivamente la sede?")) return;
-  const { error } = await sb.from('locations').delete().eq('id', id);
-  if(error) return showAlert('error', error.message);
-  await fetchAllData(); render(); showAlert('ok','Sede cancellata.');
-}
-async function createArticle(){
-  const name=$('#newArtName').value.trim(), category=$('#newArtCategory').value.trim(), internal_code=$('#newArtCode').value.trim(), serial=$('#newArtSerial').value.trim(), location_id=$('#newArtLoc').value, state=$('#newArtState').value, userId=$('#newArtUser').value||null;
-  if(!name) return showAlert('error','Inserisci il nome articolo.');
-  if(state==='in_carico' && !userId) return showAlert('error','Se lo stato è in carico seleziona un possessore.');
-  const { error } = await sb.from('articles').insert({ name, category, internal_code, serial, active:true, location_id, state, current_holder_user_id:state==='in_carico'?userId:null, last_known_user_id:state==='in_carico'?userId:null, last_note:'' });
-  if(error) return showAlert('error', error.message);
-  await fetchAllData(); render(); showAlert('ok','Articolo creato.');
-}
-async function deleteArticle(id){
-  if(!confirm("ATTENZIONE: cancelli definitivamente l'articolo? Lo storico dei movimenti resterà nel log.")) return;
-  const { error } = await sb.from('articles').delete().eq('id', id);
-  if(error) return showAlert('error', error.message);
-  await fetchAllData(); render(); showAlert('ok','Articolo cancellato.');
-}
+
+async function updateUserRole(id,role){ try {await api('role_user',{id,role}); await fetchAllData(); render();}catch(e){showAlert('error',e.message);} }
+
+async function deleteUser(id){ if(!confirm('Disattivare questo utente mantenendo lo storico?')) return; try {await api('disable_user',{id}); await fetchAllData(); render();}catch(e){showAlert('error',e.message);} }
+
+async function createLocation(){ try {await api('create_location',{name:$('#newLocName').value.trim(),type:$('#newLocType').value,notes:$('#newLocNotes').value.trim()}); await fetchAllData(); render();}catch(e){showAlert('error',e.message);} }
+
+async function deleteLocation(id){if(!confirm('Disattivare la sede mantenendo lo storico?')) return; try {await api('disable_location',{id}); await fetchAllData(); render();}catch(e){showAlert('error',e.message);} }
+
+async function createArticle(){try {await api('create_article',{name:$('#newArtName').value.trim(),category:$('#newArtCategory').value.trim(),internal_code:$('#newArtCode').value.trim(),serial:$('#newArtSerial').value.trim(),location_id:$('#newArtLoc').value,state:$('#newArtState').value,current_holder_user_id:$('#newArtUser').value||null}); await fetchAllData(); render();}catch(e){showAlert('error',e.message);} }
+
+async function deleteArticle(id){if(!confirm('Disattivare l’articolo mantenendo lo storico?')) return; try {await api('disable_article',{id}); await fetchAllData(); render();}catch(e){showAlert('error',e.message);} }
 
 function exportLocationPdf(){
   const locationId = document.getElementById('pdfLocation').value;
@@ -1216,6 +1106,7 @@ document.addEventListener('visibilitychange', async ()=>{
 });
 window.saveToken = ()=>{};
 window.resetToken = ()=>{};
+window.activateAccess=activateAccess;
 window.adminLogin=adminLogin;
 window.openPinModal=openPinModal;
 window.userLogin=userLogin;
