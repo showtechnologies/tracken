@@ -15,6 +15,7 @@ w.supabase={createClient:()=>({rpc:async(name,args)=>{
 }})};
 w.eval(script+'\nwindow.testState=()=>({users:db.users.length,session:secureSession});');
 (async()=>{
+ await w.initApp();
  assert.equal(calls.length,0,'boot must not fetch data before authentication');
  assert(w.document.getElementById('loginName'));
  assert(!html.includes('ADMIN_PASSWORD'));

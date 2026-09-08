@@ -4,9 +4,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tracken Supabase v2 Offline Progress Stable Fixed</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <title>Tracken — Attrezzi in cantiere</title>
+  <meta name="theme-color" content="#1d4ed8">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg">
+  <script src="./offline-db.js"></script>
   <style>
+    button{min-height:44px;touch-action:manipulation} input,select,textarea{font-size:16px}
     :root{
       --bg:#f4f7fb; --card:#ffffff; --text:#1f2937; --muted:#6b7280; --border:#dbe3ee;
       --primary:#1d4ed8; --primary-soft:#dbeafe; --ok:#166534; --ok-soft:#dcfce7;
@@ -99,7 +103,17 @@
 <script>
 const SUPABASE_URL = "https://ytmvwotpniiortfagjbl.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl0bXZ3b3Rwbmlpb3J0ZmFnamJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NTAyNDQsImV4cCI6MjA5MDEyNjI0NH0.dPkJcQGjJaedpicj1QARqzJjrWyGnXAui8I80FQNozs";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : {
+ async rpc(name,args){
+  const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),15000);
+  try {
+   const response=await fetch(SUPABASE_URL+'/rest/v1/rpc/'+encodeURIComponent(name),{method:'POST',signal:controller.signal,headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY,'Content-Type':'application/json'},body:JSON.stringify(args)});
+   const data=await response.json();
+   return response.ok?{data}:{error:{message:data.message||'Servizio non disponibile.'}};
+  } catch(e){return {error:{message:'Connessione non disponibile. I movimenti salvati rimangono sul dispositivo.'}};}
+  finally {clearTimeout(timeout);}
+ }
+};
 
 const SESSION_TIMEOUT_MINUTES=20;
 let secureSession=null, pollingTimer=null, queueProcessing=false;
@@ -857,7 +871,7 @@ function renderAdminLogs(){
     <div id="topAlertSlot">${renderAlert()}</div>
     ${renderTopbar('Storico globale','Tutti i movimenti registrati')}
     <table><thead><tr><th>Data</th><th>Tipo</th><th>Articolo</th><th>Seriale</th><th>Da sede</th><th>A sede</th><th>Da user</th><th>A user</th><th>Registrato da</th><th>Nota</th><th>GPS</th><th>Indirizzo</th></tr></thead><tbody>
-      ${db.movements.map(m=>`<tr><td data-label="Data">${formatDate(m.created_at)}</td><td data-label="Tipo">${esc(movementLabel(m.movement_type))}</td><td data-label="Articolo">${esc(m.article_name)}</td><td data-label="Seriale">${esc(m.article_serial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.from_location_id))}</td><td data-label="A sede">${esc(getLocationName(m.to_location_id))}</td><td data-label="Da user">${esc(m.from_user_id?getUserName(m.from_user_id):'Home')}</td><td data-label="A user">${esc(m.to_user_id?getUserName(m.to_user_id):'Home')}</td><td data-label="Registrato da">${esc(m.recorded_by_user_id?getUserName(m.recorded_by_user_id):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td><td data-label="GPS">${m.geo_lat!=null && m.geo_lng!=null ? `<a href="https://maps.google.com/?q=${m.geo_lat},${m.geo_lng}" target="_blank" rel="noopener">${esc(formatGeoPoint(m.geo_lat, m.geo_lng))}</a>` : '-'}</td><td data-label="Indirizzo">${esc(m.geo_address || '-')}</td></tr>`).join('')}
+      ${db.movements.map(m=>`<tr><td data-label="Data">${formatMovementTime(m)}</td><td data-label="Tipo">${esc(movementLabel(m.movement_type))}</td><td data-label="Articolo">${esc(m.article_name)}</td><td data-label="Seriale">${esc(m.article_serial||'-')}</td><td data-label="Da sede">${esc(getLocationName(m.from_location_id))}</td><td data-label="A sede">${esc(getLocationName(m.to_location_id))}</td><td data-label="Da user">${esc(m.from_user_id?getUserName(m.from_user_id):'Home')}</td><td data-label="A user">${esc(m.to_user_id?getUserName(m.to_user_id):'Home')}</td><td data-label="Registrato da">${esc(m.recorded_by_user_id?getUserName(m.recorded_by_user_id):'-')}</td><td data-label="Nota">${esc(m.note||'-')}</td><td data-label="GPS">${m.geo_lat!=null && m.geo_lng!=null ? `<a href="https://maps.google.com/?q=${m.geo_lat},${m.geo_lng}" target="_blank" rel="noopener">${esc(formatGeoPoint(m.geo_lat, m.geo_lng))}</a>` : '-'}</td><td data-label="Indirizzo">${esc(m.geo_address || '-')}</td></tr>`).join('')}
     </tbody></table>
   </div>`;
 }
@@ -952,9 +966,7 @@ function openMovementModal(type){
 async function confirmMovement(type){
   const note=$('#movementNote').value.trim(), targetUser=$('#targetUser')?.value||null, targetLocation=$('#targetLocation')?.value||null, articles=selectedArticleIds.map(findArticle).filter(Boolean);
   const userIsAdmin = currentUserIsAdmin();
-  if(!modalGeoState || modalGeoState.loading){
-    await captureMovementGeo(false);
-  }
+  // GPS is optional and must never block recording inside a ship.
   if(type==='passaggio'&&!targetUser){ showAlert('error','Seleziona il collega destinatario.'); closeModal(); return; }
   if(type==='trasferimento'&&!targetLocation){ showAlert('error','Seleziona la sede di destinazione.'); closeModal(); return; }
 
@@ -1029,9 +1041,10 @@ async function confirmMovement(type){
         : { location_id:targetLocation, state:'home', current_holder_user_id:null, last_movement_at:nowIso(), last_note:note||'' };
     }
     const ok = await saveMovementAndArticle(a, movement, patch);
-    if(!ok){ closeModal(); return; }
+    if(!ok){ closeModal(); render(); return; }
+    selectedArticleIds=selectedArticleIds.filter(id=>id!==a.id);
   }
-  selectedArticleIds=[]; closeModal(); showAlert('ok', movementLabel(type) + ' completato con successo.'); render();
+  selectedArticleIds=[]; closeModal(); showAlert('ok', 'Movimento salvato sul dispositivo. Controlla lo stato nella coda.'); render();
 }
 
 function openHistory(articleId){
@@ -1039,7 +1052,7 @@ function openHistory(articleId){
   openModal(`<h3>Storico articolo</h3><p><strong>${esc(article.name)}</strong> ${article.serial?`• ${esc(article.serial)}`:''}</p>
     ${logs.length ? `<table><thead><tr><th>Data</th><th>Tipo</th><th>Da sede</th><th>A sede</th><th>Da</th><th>A</th><th>Registrato da</th><th>Nota</th><th>GPS</th><th>Indirizzo</th><th>Img</th></tr></thead><tbody>
       ${logs.map(log=>`<tr>
-        <td data-label="Data">${formatDate(log.created_at)}</td>
+        <td data-label="Data">${formatMovementTime(log)}</td>
         <td data-label="Tipo">${esc(movementLabel(log.movement_type))}</td>
         <td data-label="Da sede">${esc(getLocationName(log.from_location_id))}</td>
         <td data-label="A sede">${esc(getLocationName(log.to_location_id))}</td>
@@ -1134,7 +1147,8 @@ window.setLocationSearch=setLocationSearch;
 window.handleSearchResultClick=handleSearchResultClick;
 window.openArticleDetail=openArticleDetail;
 
-initApp();
 </script>
+<script src="./offline-app.js"></script>
+<script>initApp();</script>
 </body>
 </html>

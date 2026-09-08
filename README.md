@@ -34,3 +34,22 @@ Le migrazioni sono progettate per essere eseguite una sola volta. Non ripristina
 Usare esclusivamente un database temporaneo con i dati sintetici di `tests/bootstrap.sql`. Eseguire la migrazione dell'API, poi `tests/security.sql`. Mai eseguire bootstrap o test di fixture sul progetto di produzione.
 
 `tests/frontend.cjs` usa jsdom (`JSDOM_PATH` può indicare l'installazione locale). Verifica caricamento senza autenticazione, login server, immagini sicure, proprietà della coda e pulizia dei dati al logout. Non contatta il progetto Supabase.
+
+
+## Mobile e lavoro senza rete (settembre 2026)
+
+Applicare prima `20260909_offline_journal.sql`, poi pubblicare tutti i file statici nella stessa cartella. Non pubblicare solo index.html. La migrazione è compatibile con il frontend precedente.
+
+Al primo accesso online il dispositivo salva in IndexedDB una copia dell'inventario e il profilo locale, senza PIN o token. La registrazione locale è disponibile per sette giorni dall'ultimo aggiornamento autenticato. Si tratta di bozze locali: il server richiede sempre una sessione valida e verifica ruolo, account attivo e stato dell'attrezzo durante l'invio. Il logout blocca la riapertura locale del profilo ma conserva il giornale per il successivo accesso dello stesso utente.
+
+Il service worker conserva l'app senza dipendenze esterne e permette la riapertura senza rete. Aggiungere Tracken alla schermata Home, completare un accesso online e verificare la disponibilità offline prima di partire. Il browser può negare la persistenza o eliminare dati se manca spazio: non cancellare i dati del sito e non usare navigazione privata. Il dispositivo deve avere un blocco schermo. Una copia esportata contiene dati e foto aziendali.
+
+Ogni movimento viene prima confermato da una transazione IndexedDB, che assegna un contatore progressivo per dispositivo. La sincronizzazione procede all'apertura, al ritorno online e ogni pochi secondi con attesa crescente dopo errori; non richiede esecuzione in background, che i telefoni possono sospendere. Il salvataggio ricevuto dal server viene marcato nel giornale soltanto dopo una ricevuta. Gli identificativi consentono di ritentare anche dopo la perdita della risposta senza duplicare il movimento.
+
+Il registro privato offline_events conserva anche eventi discordanti, orario dichiarato dal dispositivo, sequenza locale e ricezione server. L'ora del dispositivo non decide automaticamente il possessore. Le dipendenze dello stesso attrezzo vengono validate dal server. Un evento discordante non blocca gli altri: compare in "Da verificare". Il gestore controlla l'attrezzo, registra se necessario un nuovo movimento correttivo e annota la verifica. La risoluzione non riscrive lo storico. La vista mostra al massimo 100 verifiche/locali recenti; l'esportazione include l'intero giornale dell'utente. Le vecchie code vengono conservate per verifica manuale.
+
+Le foto restano incorporate nelle registrazioni: questo rilascio non le migra a Storage. Il giornale non viene eliminato automaticamente. Valutare successivamente conservazione/archiviazione e volumi delle immagini.
+
+Per ogni nuova pubblicazione modificare la versione CACHE in sw.js. Il service worker nuovo entra in uso dopo la chiusura delle vecchie finestre, per evitare versioni miste. La cache non contiene risposte API né credenziali.
+
+Test: `tests/offline.sql` su fixture vuota + migrazioni, `tests/offline.cjs` con jsdom/fake-indexeddb, `tests/service-worker.cjs`. Coprono perdita di risposta, riavvio, foto, scadenza sessione, conflitti/orologi discordanti, autorizzazioni, ricevute e fallimento per spazio locale.
