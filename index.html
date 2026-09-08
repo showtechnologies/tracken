@@ -131,10 +131,24 @@ async function acceptSession(result){
  secureSession=result; currentUserId=result.user.id; adminLogged=!!result.user.manager; currentView=adminLogged?'admin_dashboard':'home'; currentSessionId=uid(); touchSession();
  await fetchAllData(); subscribeRealtime(); render();
 }
-async function activateAccess(){
- try { const data=await api('activate',{name:$('#loginName').value.trim(),code:$('#activationCode').value.trim(),pin:$('#loginPin').value}); await acceptSession(data); }
+let authBusy=false;
+async function submitAccess(action){
+ if(authBusy) return;
+ const name=$('#loginName').value.trim(), pin=$('#loginPin').value, code=$('#activationCode').value.trim();
+ if(!name) return showAlert('error','Inserisci il nome utente, ad esempio SACHA.');
+ if(!/^[0-9]{8,12}$/.test(pin)) return showAlert('error','Il PIN deve contenere da 8 a 12 cifre, solo numeri.');
+ if(action==='activate' && !code) return showAlert('error','Inserisci il codice di attivazione ricevuto.');
+ if(action==='login' && code) return showAlert('error','Per usare il codice premi Attiva accesso, sotto il codice.');
+ authBusy=true;
+ const buttons=[...document.querySelectorAll('#app button')];
+ buttons.forEach(b=>b.disabled=true);
+ showAlert('info','Verifica in corso…');
+ try { await acceptSession(await api(action,{name,pin,...(action==='activate'?{code}:{})})); }
  catch(e){ showAlert('error',e.message); }
+ finally { authBusy=false; buttons.forEach(b=>b.disabled=false); }
 }
+async function activateAccess(){ await submitAccess('activate'); }
+
 function touchSession(){ lastActivityAt = nowIso(); }
 function getOfflineQueue(){
   try{ return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]"); }catch(e){ return []; }
@@ -247,7 +261,7 @@ function showAlert(type,msg){
   alertState = {type, message: msg};
   renderAlertOnly();
   showToast(type,msg);
-  setTimeout(()=>{ alertState=null; renderAlertOnly(); }, 2200);
+  if(type!=='error') { const shown=alertState; setTimeout(()=>{ if(alertState===shown){ alertState=null; renderAlertOnly(); } }, 2200); }
 }
 function renderAlert(){ return !alertState ? '' : `<div class="alert show ${alertState.type}">${esc(alertState.message)}</div>`; }
 function renderAlertOnly(){ const slot = document.getElementById("topAlertSlot"); if(slot) slot.innerHTML = renderAlert(); }
@@ -878,10 +892,7 @@ function render(){
   restoreFocus();
 }
 
-async function adminLogin(){
- try { await acceptSession(await api('login',{name:$('#loginName').value.trim(),pin:$('#loginPin').value})); }
- catch(e){ showAlert('error',e.message); }
-}
+async function adminLogin(){ await submitAccess('login'); }
 
 function setAdminView(view){ currentView=view; render(); }
 function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
