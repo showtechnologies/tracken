@@ -1,0 +1,38 @@
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const {JSDOM}=require(process.env.JSDOM_PATH || 'jsdom');
+const html=fs.readFileSync(require('node:path').join(__dirname,'../index.html'),'utf8');
+const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const calls=[];
+const dom=new JSDOM(html.replace(/<script[\s\S]*?<\/script>/g,''),{url:'https://test.invalid/',runScripts:'outside-only',pretendToBeVisual:true});
+const w=dom.window; w.scrollTo=()=>{}; w.confirm=()=>true;
+const user={id:'00000000-0000-4000-8000-000000000002',name:'Worker',role:'user',manager:false};
+w.supabase={createClient:()=>({rpc:async(name,args)=>{
+ calls.push(args);
+ if(args.p_action==='login') return {data:{token:'a'.repeat(64),user,expires_at:new Date(Date.now()+1200000).toISOString()}};
+ if(args.p_action==='data') return {data:{user,users:[{...user,active:true}],locations:[],articles:[],movements:[]}};
+ return {data:{ok:true}};
+}})};
+w.eval(script+'\nwindow.testState=()=>({users:db.users.length,session:secureSession});');
+(async()=>{
+ assert.equal(calls.length,0,'boot must not fetch data before authentication');
+ assert(w.document.getElementById('loginName'));
+ assert(!html.includes('ADMIN_PASSWORD'));
+ assert(!html.includes('function hashPin'));
+ assert(!/sb\.from\(/.test(script),'direct table API bypass remains');
+ w.document.getElementById('loginName').value='Worker';
+ w.document.getElementById('loginPin').value='78965432';
+ await w.adminLogin();
+ assert.equal(calls[0].p_action,'login'); assert.equal(calls[1].p_action,'data');
+ assert(w.document.body.textContent.includes('Seleziona un cantiere'));
+ assert.equal(w.eval('safeImage(\'x" onerror="bad\')'),'');
+ assert.equal(w.eval('safeImage("data:image/svg+xml;base64,AAAA")'),'');
+ w.localStorage.setItem('tracken_supabase_offline_queue_v1',JSON.stringify([{recorded_by_user_id:'other',operation_id:'old'}]));
+ const n=calls.length; await w.eval('processOfflineQueue(false)'); assert.equal(calls.length,n,'queue from another user executed');
+ await w.logoutAll();
+ assert.equal(w.testState().users,0); assert.equal(w.testState().session,null);
+ assert(w.document.getElementById('loginName'));
+ assert(!w.sessionStorage.length,'token persisted in session storage');
+ console.log('PASS: no unauthenticated fetch, server login, role UI, safe images, queue ownership, logout clears data');
+ dom.window.close();
+})().catch(e=>{console.error(e);dom.window.close();process.exitCode=1;});
